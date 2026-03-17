@@ -359,14 +359,20 @@ export default function CandidatesPage() {
             const curAct = live?.currentAction ?? null;
             const pct    = live?.progress ?? 0;
             const pacing = pacingMap.get(c.id);
-            const bucket = paceBucketMap[c.id];
-            const safety: SafetyLevel =
-              bucket === "on-track" ? "safe"
-              : bucket === "watch"  ? "watch"
-              : bucket === "at-risk" ? "at-risk"
+            const bucket = mounted ? paceBucketMap[c.id] : undefined;
+            const safety: SafetyLevel = !mounted
+              ? "safe"
+              : bucket === "on-track" ? "safe"
+              : bucket === "watch"    ? "watch"
+              : bucket === "at-risk"  ? "at-risk"
               : c.riskLevel === "at-risk" ? "at-risk"
               : c.riskLevel === "watch"   ? "watch"
               : "safe";
+            const badge =
+              bucket === "on-track" ? "normal"
+              : bucket === "watch"  ? "watch"
+              : bucket === "at-risk" ? "at-risk"
+              : c.riskLevel;
 
 
             return (
@@ -388,7 +394,7 @@ export default function CandidatesPage() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {!c.isAlumni && pacing && pacing.level !== "ok" && <PacingBadge level={pacing.level} />}
-                    {!c.isAlumni && <RiskBadge level={c.riskLevel} />}
+                    {!c.isAlumni && <RiskBadge level={badge} />}
                     {c.isAlumni && (
                       <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-400 border border-emerald-500/30">Alumni</span>
                     )}
@@ -486,11 +492,12 @@ export default function CandidatesPage() {
                     {cols.map((c) => {
                       const curAct = liveDataMap.get(c.id)?.currentAction ?? null;
                       const pacing = pacingMap.get(c.id);
-                      const bucket = paceBucketMap[c.id];
-                      const safety: SafetyLevel =
-                        bucket === "on-track" ? "safe"
-                        : bucket === "watch"  ? "watch"
-                        : bucket === "at-risk" ? "at-risk"
+                      const bucket = mounted ? paceBucketMap[c.id] : undefined;
+                      const safety: SafetyLevel = !mounted
+                        ? "safe"
+                        : bucket === "on-track" ? "safe"
+                        : bucket === "watch"    ? "watch"
+                        : bucket === "at-risk"  ? "at-risk"
                         : c.riskLevel === "at-risk" ? "at-risk"
                         : c.riskLevel === "watch"   ? "watch"
                         : "safe";
