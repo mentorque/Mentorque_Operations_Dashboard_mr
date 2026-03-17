@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -106,23 +114,31 @@ export async function POST(req: NextRequest) {
 
     for (const block of candidateBlocks) {
       const name = block.name;
-      const [firstName, ...rest] = name.split(" ");
-      const lastName = rest.join(" ") || null;
+      const id = slugify(name) || `candidate-${Date.now()}`;
 
       const candidate = await prisma.candidate.upsert({
         where: {
-          sourceRef: `mtq_ops_tracker:${name}`
+          id
         },
-        update: {},
+        update: {
+          name,
+          role: block.role ?? "TBD",
+          mentor: block.mentor ?? "TBD",
+        },
         create: {
-          firstName,
-          lastName: lastName ?? "",
-          sourceRef: `mtq_ops_tracker:${name}`,
-          metadata: {
-            rawName: name,
-            mentor: block.mentor ?? null,
-            role: block.role ?? null
-          }
+          id,
+          name,
+          role: block.role ?? "TBD",
+          mentor: block.mentor ?? "TBD",
+          currentStageId: "onboarding",
+          riskLevel: "normal",
+          isAlumni: false,
+          enrolledDate: new Date().toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          }),
+          notes: null,
         }
       });
 
@@ -148,12 +164,22 @@ export async function POST(req: NextRequest) {
         if (week) descriptionParts.push(`Week: ${week}`);
         if (comment) descriptionParts.push(`Comment: ${comment}`);
 
-        await prisma.task.create({
+        await prisma.journeyItem.create({
           data: {
             candidateId: candidate.id,
-            title,
-            description: descriptionParts.join(" | ")
-          }
+            instanceId: `import-${candidate.id}-${r}`,
+            actionId: null,
+            stageId: null,
+            shortTitle: title,
+            title: null,
+            status: "done",
+            date: date || null,
+            comment: descriptionParts.join(" | ") || null,
+            poc: null,
+            duration: null,
+            isCustom: true,
+            orderIndex: r - 3,
+          },
         });
 
         actionsImported++;
