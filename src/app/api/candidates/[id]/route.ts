@@ -68,10 +68,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     });
 
     return NextResponse.json(updated);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating candidate', error);
 
-    if (error.code === 'P2025') {
+    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'P2025') {
       return NextResponse.json(
         { error: 'Candidate not found' },
         { status: 404 },

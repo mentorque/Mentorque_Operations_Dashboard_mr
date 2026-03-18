@@ -26,6 +26,21 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
 }
 
+export type JourneyItemPayload = {
+  instanceId?: string;
+  actionId?: string | null;
+  stageId?: string | null;
+  shortTitle?: string;
+  title?: string | null;
+  status?: string;
+  date?: string | null;
+  comment?: string | null;
+  poc?: string | null;
+  duration?: string | null;
+  isCustom?: boolean;
+  orderIndex?: number;
+};
+
 export async function PUT(request: Request, { params }: RouteParams) {
   const { id: candidateId } = params;
 
@@ -39,7 +54,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    const upserts = body.map((item: any, index: number) => {
+    const upserts = body.map((item: JourneyItemPayload, index: number) => {
       if (!item.instanceId) {
         return prisma.journeyItem.create({
           data: {

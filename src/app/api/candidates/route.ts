@@ -88,10 +88,10 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(candidate, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating candidate', error);
 
-    if (error.code === 'P2002') {
+    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'P2002') {
       return NextResponse.json(
         { error: 'Candidate with this id already exists' },
         { status: 409 },

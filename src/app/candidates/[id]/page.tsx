@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Fragment } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -71,8 +71,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const [journey, setJourney] = useState<SessionItem[]>([]);
   const [reorderMode, setReorderMode]   = useState(false);
   const [editingId, setEditingId]       = useState<string | null>(null);
-  const [insertingAt, setInsertingAt]   = useState<number | null>(null);
-  const [openTemplates, setOpenTemplates] = useState<Set<string>>(new Set());
+  const [, setInsertingAt]               = useState<number | null>(null);
   const [hideDone, setHideDone]         = useState(false);
   const [journeyView, setJourneyView]   = useState<"board" | "vertical">("board");
 
@@ -186,7 +185,21 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         date: i.date,
         shortTitle: i.shortTitle,
       })))
-    : ({ needsScheduling: false, paceBelowTarget: false } as any);
+    : {
+        level: "ok",
+        messages: [],
+        weeksElapsed: 0,
+        stepsPerWeek: 0,
+        doneCount: 0,
+        totalApplicable: 0,
+        projectedTotalWeeks: null,
+        hasScheduledCall: false,
+        nextScheduledTitle: undefined,
+        nextScheduledDate: undefined,
+        nextPendingTitle: undefined,
+        needsScheduling: false,
+        paceBelowTarget: false,
+      };
   const paceBucket = mounted ? getPaceBucket(pacing) : "on-track";
   const safetyLevel: SafetyLevel = paceBucket === "on-track" ? "safe" : paceBucket;
 
@@ -270,20 +283,11 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       isCustom: true,
     };
     setJourney((prev) => [...prev.slice(0, index), newItem, ...prev.slice(index)]);
-    setInsertingAt(null);
   }
 
   function deleteItem(instanceId: string) {
     setJourney((prev) => prev.filter((i) => i.instanceId !== instanceId));
     if (editingId === instanceId) setEditingId(null);
-  }
-
-  function toggleTemplate(instanceId: string) {
-    setOpenTemplates((prev) => {
-      const s = new Set(prev);
-      s.has(instanceId) ? s.delete(instanceId) : s.add(instanceId);
-      return s;
-    });
   }
 
   function cycleStatus(item: SessionItem) {
@@ -1051,7 +1055,6 @@ function KanbanCard({
 }) {
   const [showMessages, setShowMessages] = useState(false);
   const tpl = item.actionId != null ? MESSAGE_TEMPLATES[item.actionId] : undefined;
-  const ds = getDeadlineStatus(item.deadline);
   const isDone = item.status === "done";
   const isNA = item.status === "na";
   const isOnHold = item.status === "on-hold";
@@ -1216,7 +1219,6 @@ function SessionRow({
     transition,
   };
 
-  const ds = getDeadlineStatus(item.deadline);
   const tpl = item.actionId != null ? MESSAGE_TEMPLATES[item.actionId] : undefined;
 
   const isDone     = item.status === "done";
@@ -1547,107 +1549,6 @@ function EditForm({
           type="button"
           onClick={onCancel}
           className="rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
-// ─── InsertBar ────────────────────────────────────────────────────────────────
-
-function InsertBar({
-  isOpen,
-  onOpen,
-  onClose,
-  onInsert,
-  candidate,
-}: {
-  isOpen: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-  onInsert: (data: Omit<SessionItem, "instanceId" | "isCustom">) => void;
-  candidate: Candidate;
-}) {
-  const [title, setTitle]       = useState("");
-  const [poc, setPoc]           = useState("");
-  const [duration, setDuration] = useState("");
-
-  function handleInsert(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim()) return;
-    onInsert({
-      title: title.trim(),
-      shortTitle: title.trim(),
-      poc: poc.trim() || undefined,
-      duration: duration.trim() || undefined,
-      status: "not-done",
-    });
-    setTitle(""); setPoc(""); setDuration("");
-  }
-
-  if (!isOpen) {
-    return (
-      <div
-        className="group flex items-center gap-2 px-4 py-0 cursor-pointer"
-        onClick={onOpen}
-      >
-        <div className="h-px flex-1 bg-slate-800/0 group-hover:bg-sky-500/20 transition" />
-        <span className="opacity-0 group-hover:opacity-100 text-[10px] text-sky-500 font-medium transition rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5">
-          + Add session
-        </span>
-        <div className="h-px flex-1 bg-slate-800/0 group-hover:bg-sky-500/20 transition" />
-      </div>
-    );
-  }
-
-  const inputCls =
-    "rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:border-sky-500 focus:outline-none";
-
-  return (
-    <form
-      onSubmit={handleInsert}
-      className="border-y border-sky-500/20 bg-sky-500/5 px-4 py-3"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-400 mb-2">
-        Insert new session
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Session name *"
-          className={`${inputCls} min-w-[180px] flex-1`}
-          autoFocus
-          required
-        />
-        <input
-          type="text"
-          value={poc}
-          onChange={(e) => setPoc(e.target.value)}
-          placeholder="PoC / Owner"
-          className={`${inputCls} w-32`}
-        />
-        <input
-          type="text"
-          value={duration}
-          onChange={(e) => setDuration(e.target.value)}
-          placeholder="Duration"
-          className={`${inputCls} w-24`}
-        />
-        <button
-          type="submit"
-          className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 transition"
-        >
-          Add
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 transition"
         >
           Cancel
         </button>

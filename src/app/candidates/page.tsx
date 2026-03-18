@@ -26,17 +26,6 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SafetyLevel = "safe" | "watch" | "at-risk";
-function computeSafetyLevel(riskLevel: string, stageAge: number, hasScheduledCall?: boolean): SafetyLevel {
-  if (hasScheduledCall) {
-    if (riskLevel === "at-risk") return "watch";
-    if (stageAge >= 5)           return "watch";
-    if (riskLevel === "watch" || stageAge >= 3) return "watch";
-    return "safe";
-  }
-  if (riskLevel === "at-risk" || stageAge >= 5) return "at-risk";
-  if (riskLevel === "watch"   || stageAge >= 3) return "watch";
-  return "safe";
-}
 
 type PaceStage = "at-risk" | "watch" | "on-track";
 
@@ -57,8 +46,7 @@ export default function CandidatesPage() {
   const [mentorOverrides, setMentorOverrides]   = useState<Record<string, string>>({});
   const [deletedCandidates, setDeletedCandidates] = useState<string[]>([]);
   const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
-  const [stageAgeDays, setStageAgeDays]         = useState<Record<string, number>>({});
-  const [scheduledMap, setScheduledMap]         = useState<Record<string, boolean>>({});
+
   const [paceBucketMap, setPaceBucketMap]       = useState<Record<string, string>>({});
   const [query,       setQuery]   = useState("");
   const [stageFilter, setStage]   = useState("all");
@@ -119,15 +107,11 @@ export default function CandidatesPage() {
 
   // Load stage age and scheduled status for all active candidates
   useEffect(() => {
-    const ageMap: Record<string, number>  = {};
-    const schedMap: Record<string, boolean> = {};
     for (const c of active) {
       upsertStageTracking(c.id, c.currentStageId);
-      ageMap[c.id]   = getStageAgeDays(c.id);
-      schedMap[c.id] = hasScheduledSession(c.id);
+      getStageAgeDays(c.id);
+      hasScheduledSession(c.id);
     }
-    setStageAgeDays(ageMap);
-    setScheduledMap(schedMap);
   }, [active]);
 
   // Derive week-based pace bucket ("on-track" | "watch" | "at-risk") per candidate

@@ -21,24 +21,12 @@ import {
   type PacingAlert,
 } from "@/lib/ops-store";
 import {
-  hasScheduledSession,
   loadJourney,
   computeLiveCandidateInfo,
   type LiveCandidateInfo,
 } from "@/lib/session-store";
 
 type SafetyLevel = "safe" | "watch" | "at-risk";
-function computeSafetyLevel(riskLevel: string, stageAge: number, hasScheduledCall?: boolean): SafetyLevel {
-  if (hasScheduledCall) {
-    if (riskLevel === "at-risk") return "watch";
-    if (stageAge >= 5)           return "watch";
-    if (riskLevel === "watch" || stageAge >= 3) return "watch";
-    return "safe";
-  }
-  if (riskLevel === "at-risk" || stageAge >= 5) return "at-risk";
-  if (riskLevel === "watch"   || stageAge >= 3) return "watch";
-  return "safe";
-}
 
 type PaceStage = "at-risk" | "watch" | "on-track";
 
@@ -48,7 +36,6 @@ export default function HomePage() {
   const [deletedCandidates, setDeletedCandidates] = useState<string[]>([]);
   const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
   const [stageAgeDays, setStageAgeDays] = useState<Record<string, number>>({});
-  const [scheduledMap, setScheduledMap] = useState<Record<string, boolean>>({});
   const [mentorCatalog, setMentorCatalog] = useState<string[]>([]);
   const [journeyVersion, setJourneyVersion] = useState(0);
 
@@ -113,14 +100,11 @@ export default function HomePage() {
 
   useEffect(() => {
     const nextMap: Record<string, number> = {};
-    const schedMap: Record<string, boolean> = {};
     for (const c of active) {
       upsertStageTracking(c.id, c.currentStageId);
       nextMap[c.id]  = getStageAgeDays(c.id);
-      schedMap[c.id] = hasScheduledSession(c.id);
     }
     setStageAgeDays(nextMap);
-    setScheduledMap(schedMap);
   }, [active]);
 
   useEffect(() => {
@@ -359,7 +343,7 @@ export default function HomePage() {
                   <Link key={c.id} href={`/candidates/${c.id}`} className={`block rounded-lg border px-3 py-2.5 transition hover:opacity-90 ${group.cardCls}`}>
                     <div className="mb-1 flex items-center justify-between gap-2">
                       <p className="truncate text-sm font-semibold text-slate-100">{c.name}</p>
-                      <span className="text-[10px] text-slate-400">{mounted ? `${((pacing as any).doneThisWeek ?? (stage === "on-track" ? 2 : stage === "watch" ? 1 : 0))}/2 this week` : null}</span>
+                      <span className="text-[10px] text-slate-400">{mounted ? `${pacing.doneCount ?? (stage === "on-track" ? 2 : stage === "watch" ? 1 : 0)}/2 this week` : null}</span>
                     </div>
                     <p className={`truncate text-xs ${group.textCls}`}>{mounted ? `Next: ${pacing.nextPendingTitle ?? "No pending step"}` : null}</p>
                     <p className="mt-1 text-[10px] text-slate-500">

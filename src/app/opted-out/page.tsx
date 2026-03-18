@@ -9,13 +9,8 @@ import {
   loadMentorOverrides,
   loadOptedOutCandidates,
   reinstateCandidate,
-  getStageAgeDays,
-  computePacingAlert,
-  getPaceBucket,
-  upsertStageTracking,
-  computePacingAlertFromItems,
 } from "@/lib/ops-store";
-import { computeLiveCandidateInfo, hasScheduledSession, loadJourney, type LiveCandidateInfo } from "@/lib/session-store";
+import { computeLiveCandidateInfo } from "@/lib/session-store";
 
 export default function OptedOutPage() {
   const [customCandidates, setCustomCandidates] = useState<Candidate[]>([]);
@@ -41,15 +36,6 @@ export default function OptedOutPage() {
     const setOpted = new Set(optedOutCandidates);
     return allCandidates.filter((c) => setOpted.has(c.id));
   }, [allCandidates, optedOutCandidates]);
-
-  const liveDataMap = useMemo(() => {
-    if (!mounted) return new Map<string, LiveCandidateInfo>();
-    const map = new Map<string, LiveCandidateInfo>();
-    for (const c of optedOutList) {
-      map.set(c.id, computeLiveCandidateInfo(c));
-    }
-    return map;
-  }, [optedOutList, mounted]);
 
   const [refreshVersion, setRefreshVersion] = useState(0);
 

@@ -54,25 +54,6 @@ export interface PacingLiveItem {
  * Load the live journey for a candidate from localStorage.
  * Falls back to building from candidate.actions if nothing saved yet.
  */
-function loadLiveItems(candidate: Candidate): PacingLiveItem[] {
-  if (typeof window !== "undefined") {
-    try {
-      const raw = localStorage.getItem(JOURNEY_LS_KEY(candidate.id));
-      if (raw) {
-        const parsed = JSON.parse(raw) as PacingLiveItem[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch { /* ignore */ }
-  }
-  // Fallback: seed data
-  return candidate.actions.map((a) => ({
-    actionId: a.actionId,
-    status: a.status,
-    date: a.date,
-    shortTitle: JOURNEY_MAP.get(a.actionId)?.shortTitle,
-  }));
-}
-
 /**
  * Programme pacing rules (all driven from the live localStorage journey):
  *  – Minimum pace: 2 completed steps/week
