@@ -97,7 +97,11 @@ export default function HomePage() {
   const alumni = useMemo(() => enrichedCandidates.filter((c) => c.isAlumni), [enrichedCandidates]);
   const atRisk = useMemo(() => active.filter((c) => c.riskLevel === "at-risk"), [active]);
   const watch = useMemo(() => active.filter((c) => c.riskLevel === "watch"), [active]);
-  const inInterview = useMemo(() => active.filter((c) => c.currentStageId === "interview-prep"), [active]);
+  const inInterview = useMemo(() => active.filter((c) =>
+    c.currentStageId === "mock-interview-1" ||
+    c.currentStageId === "mock-interview-2" ||
+    c.currentStageId === "mock-interview-3"
+  ), [active]);
 
   useEffect(() => {
     const nextMap: Record<string, number> = {};
