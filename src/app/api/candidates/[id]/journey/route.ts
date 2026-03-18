@@ -60,7 +60,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
           data: {
             candidateId,
             instanceId: `api-${candidateId}-${Date.now()}-${index}`,
-            actionId: item.actionId ?? null,
+            actionId: item.actionId != null ? Number(item.actionId) : null,
             stageId: item.stageId ?? null,
             shortTitle: item.shortTitle,
             title: item.title ?? null,
@@ -79,7 +79,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
         where: { instanceId: item.instanceId },
         update: {
           candidateId,
-          actionId: item.actionId ?? null,
+          actionId: item.actionId != null ? Number(item.actionId) : null,
           stageId: item.stageId ?? null,
           shortTitle: item.shortTitle,
           title: item.title ?? null,
@@ -94,7 +94,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
         create: {
           candidateId,
           instanceId: item.instanceId,
-          actionId: item.actionId ?? null,
+          actionId: item.actionId != null ? Number(item.actionId) : null,
           stageId: item.stageId ?? null,
           shortTitle: item.shortTitle,
           title: item.title ?? null,

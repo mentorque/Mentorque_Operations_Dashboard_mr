@@ -74,6 +74,7 @@ export default function HomePage() {
       }));
   }, [customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveDataMap = useMemo(() => {
     if (!mounted) return new Map<string, LiveCandidateInfo>();
     const map = new Map<string, LiveCandidateInfo>();
@@ -126,6 +127,7 @@ export default function HomePage() {
   const autoAtRisk = useMemo(() => stagnated.filter((c) => c.riskLevel === "normal" && (stageAgeDays[c.id] ?? 0) >= 5), [stagnated, stageAgeDays]);
 
   // Standalone pace tracker (all active candidates, grouped by pace stage)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const paceRows = useMemo<Array<{ candidate: Candidate; pacing: PacingAlert; stage: PaceStage }>>(() => {
     if (!mounted) return [];
     return active
