@@ -49,7 +49,11 @@ import {
   upsertStageTracking,
   saveCalendarEvent,
   removeCalendarEvent,
+  saveCustomCandidates,
+  deleteCandidate,
+  optOutCandidate,
 } from "@/lib/ops-store";
+import { useRouter } from "next/navigation";
 
 // ─── Safety level ─────────────────────────────────────────────────────────────
 type SafetyLevel = "safe" | "watch" | "at-risk";
@@ -77,6 +81,9 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const [notesInput, setNotesInput]         = useState("");
   const [stageAge, setStageAge]             = useState<number>(0);
   const [mounted, setMounted] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showOptOutConfirm, setShowOptOutConfirm] = useState(false);
+  const router = useRouter();
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -197,6 +204,27 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     const next = addMentorName(newMentorName.trim());
     setMentorCatalog(next);
     setNewMentorName("");
+  }
+
+  function handleDeleteCandidate() {
+    if (!candidate) return;
+    const fromSeed = CANDIDATES.some((c) => c.id === candidate.id);
+    if (fromSeed) {
+      deleteCandidate(candidate.id);
+    } else {
+      const custom = loadCustomCandidates().filter((c) => c.id !== candidate.id);
+      saveCustomCandidates(custom);
+    }
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`mq-journey-v1-${candidate.id}`);
+    }
+    router.push("/candidates");
+  }
+
+  function handleOptOutCandidate() {
+    if (!candidate) return;
+    optOutCandidate(candidate.id);
+    router.push("/candidates");
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -397,7 +425,65 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
             >
               Add mentor
             </button>
+            <button
+              type="button"
+              onClick={() => { setShowOptOutConfirm(true); setShowDeleteConfirm(false); }}
+              className="rounded-md border border-amber-600/50 bg-amber-500/10 px-2 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
+            >
+              Opted out
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowDeleteConfirm(true); setShowOptOutConfirm(false); }}
+              className="rounded-md border border-red-400/40 bg-red-500/10 px-2 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20 transition"
+            >
+              🗑 Delete candidate
+            </button>
           </div>
+
+          {showOptOutConfirm && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-900/10 p-3 text-xs text-slate-200">
+              <p className="mb-2 text-slate-100">Mark {candidate.name} as opted out? They will be moved to the Opted Out page.</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOptOutCandidate}
+                  className="rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-400 transition"
+                >
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOptOutConfirm(false)}
+                  className="rounded-md border border-slate-600 px-2 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-500 hover:text-slate-100 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showDeleteConfirm && (
+            <div className="rounded-lg border border-red-500/30 bg-red-900/10 p-3 text-xs text-slate-200">
+              <p className="mb-2 text-slate-100">Are you sure you want to delete {candidate.name}? This cannot be undone.</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteCandidate}
+                  className="rounded-md bg-red-500 px-2 py-1.5 text-xs font-semibold text-white hover:bg-red-400 transition"
+                >
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="rounded-md border border-slate-600 px-2 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-500 hover:text-slate-100 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Next Step Spotlight ───────────────────────────────────── */}
           {currentAct ? (
@@ -443,7 +529,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                   </span>
                 )}
               </div>
-              {currentAct.comment && (
+              {currentAct.comment && !currentAct.comment.toLowerCase().includes("mentor not assigned") && (
                 <div className="mt-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2.5">
                   <p className="text-xs font-medium text-amber-300 leading-snug">⚠ {currentAct.comment}</p>
                 </div>
@@ -1005,7 +1091,7 @@ function KanbanCard({
         )}
 
         {/* Comment */}
-        {item.comment && (
+        {item.comment && !item.comment.toLowerCase().includes("mentor not assigned") && (
           <p className="pl-7 text-[10px] text-amber-400 leading-snug">⚠ {item.comment}</p>
         )}
 
@@ -1227,7 +1313,7 @@ function SessionRow({
               </span>
             )}
             {/* Comment */}
-            {item.comment && (
+            {item.comment && !item.comment.toLowerCase().includes("mentor not assigned") && (
               <span className="text-[10px] text-amber-500/80 truncate max-w-[200px]">
                 ⚠ {item.comment}
               </span>

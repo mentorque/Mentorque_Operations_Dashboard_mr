@@ -11,8 +11,10 @@ import {
   getStageAgeDays,
   getPaceBucket,
   loadCustomCandidates,
+  loadDeletedCandidates,
   loadMentorCatalog,
   loadMentorOverrides,
+  loadOptedOutCandidates,
   saveMentorOverride,
   upsertStageTracking,
   computePacingAlertFromItems,
@@ -43,6 +45,8 @@ type PaceStage = "at-risk" | "watch" | "on-track";
 export default function HomePage() {
   const [customCandidates, setCustomCandidates] = useState<Candidate[]>([]);
   const [mentorOverrides, setMentorOverrides] = useState<Record<string, string>>({});
+  const [deletedCandidates, setDeletedCandidates] = useState<string[]>([]);
+  const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
   const [stageAgeDays, setStageAgeDays] = useState<Record<string, number>>({});
   const [scheduledMap, setScheduledMap] = useState<Record<string, boolean>>({});
   const [mentorCatalog, setMentorCatalog] = useState<string[]>([]);
@@ -67,17 +71,21 @@ export default function HomePage() {
     const overrides = loadMentorOverrides();
     setCustomCandidates(custom);
     setMentorOverrides(overrides);
+    setDeletedCandidates(loadDeletedCandidates());
+    setOptedOutCandidates(loadOptedOutCandidates());
     setMentorCatalog(loadMentorCatalog());
     setMounted(true);
   }, []);
 
   const allCandidates = useMemo(() => {
-    const merged = [...CANDIDATES, ...customCandidates].map((c) => ({
-      ...c,
-      mentor: mentorOverrides[c.id] ?? c.mentor,
-    }));
-    return merged;
-  }, [customCandidates, mentorOverrides]);
+    const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
+    return [...CANDIDATES, ...customCandidates]
+      .filter((c) => !excluded.has(c.id))
+      .map((c) => ({
+        ...c,
+        mentor: mentorOverrides[c.id] ?? c.mentor,
+      }));
+  }, [customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
 
   const liveDataMap = useMemo(() => {
     if (!mounted) return new Map<string, LiveCandidateInfo>();
@@ -116,7 +124,11 @@ export default function HomePage() {
   }, [active]);
 
   useEffect(() => {
-    const refresh = () => setJourneyVersion((v) => v + 1);
+    const refresh = () => {
+      setJourneyVersion((v) => v + 1);
+      setDeletedCandidates(loadDeletedCandidates());
+      setOptedOutCandidates(loadOptedOutCandidates());
+    };
     window.addEventListener("mq:journey-updated", refresh as EventListener);
     window.addEventListener("storage", refresh);
     return () => {

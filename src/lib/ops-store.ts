@@ -488,6 +488,38 @@ export function saveCandidateNotes(candidateId: string, notes: string): void {
   safeWrite(CANDIDATE_NOTES_KEY, all);
 }
 
+const DELETED_CANDIDATES_KEY = "mq-deleted-candidates-v1";
+const OPTED_OUT_CANDIDATES_KEY = "mq-opted-out-candidates-v1";
+
+export function loadDeletedCandidates(): string[] {
+  return safeRead<string[]>(DELETED_CANDIDATES_KEY, []);
+}
+
+export function deleteCandidate(id: string): void {
+  const current = safeRead<string[]>(DELETED_CANDIDATES_KEY, []);
+  if (!current.includes(id)) {
+    current.push(id);
+    safeWrite(DELETED_CANDIDATES_KEY, current);
+  }
+}
+
+export function loadOptedOutCandidates(): string[] {
+  return safeRead<string[]>(OPTED_OUT_CANDIDATES_KEY, []);
+}
+
+export function optOutCandidate(id: string): void {
+  const current = safeRead<string[]>(OPTED_OUT_CANDIDATES_KEY, []);
+  if (!current.includes(id)) {
+    current.push(id);
+    safeWrite(OPTED_OUT_CANDIDATES_KEY, current);
+  }
+}
+
+export function reinstateCandidate(id: string): void {
+  const current = safeRead<string[]>(OPTED_OUT_CANDIDATES_KEY, []);
+  safeWrite(OPTED_OUT_CANDIDATES_KEY, current.filter((x) => x !== id));
+}
+
 export function addMentorName(name: string): string[] {
   const clean = name.trim();
   if (!clean) return loadMentorCatalog();

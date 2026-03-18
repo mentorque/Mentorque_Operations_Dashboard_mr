@@ -179,7 +179,7 @@ export const CANDIDATES: Candidate[] = [
     id: "shubham",
     name: "Shubham",
     role: "Project Manager",
-    mentor: "TBD",
+    mentor: "Ashwini",
     currentStageId: "projects-portfolio",
     riskLevel: "at-risk",
     isAlumni: false,

@@ -6,6 +6,8 @@ import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
 import type { Candidate, RiskLevel, StageId } from "@/lib/data";
 import {
   loadCustomCandidates,
+  loadDeletedCandidates,
+  loadOptedOutCandidates,
   loadMentorOverrides,
   getStageAgeDays,
   getPaceBucket,
@@ -53,6 +55,8 @@ function getBatchLabel(enrolledDate: string): string {
 export default function CandidatesPage() {
   const [customCandidates, setCustomCandidates] = useState<Candidate[]>([]);
   const [mentorOverrides, setMentorOverrides]   = useState<Record<string, string>>({});
+  const [deletedCandidates, setDeletedCandidates] = useState<string[]>([]);
+  const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
   const [stageAgeDays, setStageAgeDays]         = useState<Record<string, number>>({});
   const [scheduledMap, setScheduledMap]         = useState<Record<string, boolean>>({});
   const [paceBucketMap, setPaceBucketMap]       = useState<Record<string, string>>({});
@@ -69,15 +73,21 @@ export default function CandidatesPage() {
   useEffect(() => {
     setCustomCandidates(loadCustomCandidates());
     setMentorOverrides(loadMentorOverrides());
+    setDeletedCandidates(loadDeletedCandidates());
+    setOptedOutCandidates(loadOptedOutCandidates());
     setMounted(true);
   }, []);
 
   const allCandidates = useMemo(() => {
-    return [...CANDIDATES, ...customCandidates].map((c) => ({
+    const overrides = mentorOverrides;
+    const candidates = [...CANDIDATES, ...customCandidates];
+    const candidatesWithMentors = candidates.map((c) => ({
       ...c,
-      mentor: mentorOverrides[c.id] ?? c.mentor,
+      mentor: overrides[c.id] ?? c.mentor,
     }));
-  }, [customCandidates, mentorOverrides]);
+    const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
+    return candidatesWithMentors.filter((c) => !excluded.has(c.id));
+  }, [customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
 
   const liveDataMap = useMemo(() => {
     if (!mounted) return new Map<string, LiveCandidateInfo>();
@@ -140,7 +150,11 @@ export default function CandidatesPage() {
   }, [allCandidates, mounted, journeyVersion]);
 
   useEffect(() => {
-    const refresh = () => setJourneyVersion((v) => v + 1);
+    const refresh = () => {
+      setJourneyVersion((v) => v + 1);
+      setDeletedCandidates(loadDeletedCandidates());
+      setOptedOutCandidates(loadOptedOutCandidates());
+    };
     window.addEventListener("mq:journey-updated", refresh as EventListener);
     window.addEventListener("storage", refresh);
     return () => {
