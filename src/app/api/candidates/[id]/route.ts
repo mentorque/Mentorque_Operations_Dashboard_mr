@@ -90,12 +90,29 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Delete related records first due to foreign key constraints
+    await prisma.journeyItem.deleteMany({
+      where: { candidateId: params.id }
+    });
+    await prisma.candidateAction.deleteMany({
+      where: { candidateId: params.id }
+    });
+    await prisma.calendarEvent.deleteMany({
+      where: { candidateId: params.id }
+    });
+    await prisma.mentorOverride.deleteMany({
+      where: { candidateId: params.id }
+    });
+    await prisma.candidateNote.deleteMany({
+      where: { candidateId: params.id }
+    });
+    // Now delete the candidate
     await prisma.candidate.delete({
-      where: { id: params.id },
+      where: { id: params.id }
     });
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error deleting candidate', error);
+    console.error('Delete candidate error:', error);
     return NextResponse.json(
       { error: 'Failed to delete candidate' },
       { status: 500 },
