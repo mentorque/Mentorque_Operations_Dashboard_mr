@@ -21,10 +21,17 @@ export default function OptedOutPage() {
   async function load() {
     try {
       const res = await fetch('/api/candidates')
-      const data = await res.json()
+      const data: Array<{
+        id: string;
+        name: string;
+        role: string;
+        currentStageId: string;
+        optedOut: boolean;
+        journeyItems?: { status: string }[];
+      }> = await res.json()
       if (Array.isArray(data) && data.length > 0) {
-        const optedOut = data.filter((c: any) => c.optedOut)
-        setOptedOutCandidates(optedOut.map((c: any) => c.id))
+        const optedOut = data.filter((c) => c.optedOut)
+        setOptedOutCandidates(optedOut.map((c) => c.id))
       }
     } catch {
       // fallback to localStorage

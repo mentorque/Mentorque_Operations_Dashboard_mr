@@ -119,16 +119,16 @@ export default function HomePage() {
       try {
         const res = await fetch('/api/candidates')
         if (!res.ok) return
-        const data = await res.json()
+        const data: Candidate[] = await res.json()
         if (Array.isArray(data) && data.length > 0) {
-          setApiCandidates(data.map((c: any) => ({
+          setApiCandidates(data.map((c) => ({
             ...c,
-            actions: c.journeyItems?.map((ji: any) => ({
+            actions: (c as any).journeyItems?.map((ji: { actionId: number | null; status: string; date?: string | null; comment?: string | null }) => ({
               actionId: ji.actionId,
               status: ji.status,
               date: ji.date ?? undefined,
               comment: ji.comment ?? undefined,
-            })) ?? c.actions ?? [],
+            })) ?? (c as any).actions ?? [],
           })))
         }
       } catch { /* silent */ }
@@ -319,18 +319,18 @@ export default function HomePage() {
           } else {
             const refreshRes = await fetch("/api/candidates");
             if (refreshRes.ok) {
-              const data = await refreshRes.json();
+              const data: Candidate[] = await refreshRes.json();
               if (Array.isArray(data) && data.length > 0) {
                 setApiCandidates(
-                  data.map((c: any) => ({
+                  data.map((c) => ({
                     ...c,
                     actions:
-                      c.journeyItems?.map((ji: any) => ({
+                      (c as any).journeyItems?.map((ji: { actionId: number | null; status: string; date?: string | null; comment?: string | null }) => ({
                         actionId: ji.actionId,
                         status: ji.status,
                         date: ji.date ?? undefined,
                         comment: ji.comment ?? undefined,
-                      })) ?? c.actions ?? [],
+                      })) ?? (c as any).actions ?? [],
                   })),
                 );
               }
