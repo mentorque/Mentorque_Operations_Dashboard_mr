@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
+import { CANDIDATES, STAGES, STAGE_STYLES, JOURNEY_ACTIONS } from "@/lib/data";
 import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 
 import {
@@ -57,7 +57,9 @@ export default function HomePage() {
   useEffect(() => {
     async function load() {
       try {
+        console.log('[DB] Attempting to fetch /api/candidates...')
         const res = await fetch('/api/candidates');
+        console.log('[DB] Response status:', res.status)
         const data = (await res.json()) as Array<{
           id: string;
           name: string;
@@ -75,6 +77,10 @@ export default function HomePage() {
           }>;
           notes?: string;
         }>;
+        console.log('[DB] Candidates received:', data.length, data)
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error('API returned empty data')
+        }
         const mapped = data.map((c) => ({
           id: c.id,
           name: c.name,
@@ -93,7 +99,8 @@ export default function HomePage() {
           notes: c.notes ?? undefined,
         }));
         setApiCandidates(mapped);
-      } catch {
+      } catch (err) {
+        console.error('[DB] API failed, falling back to localStorage:', err)
         setCustomCandidates(loadCustomCandidates());
       }
       setMentorOverrides(loadMentorOverrides());
@@ -180,13 +187,15 @@ export default function HomePage() {
     if (!mounted) return [];
     return active
       .map((c) => {
-        const journey = loadJourney(c);
-        const items = journey.map((i) => ({
-          actionId: i.actionId,
-          status: i.status,
-          date: i.date,
-          shortTitle: i.shortTitle,
-        }));
+        const items = c.actions.map((i) => {
+          const ja = JOURNEY_ACTIONS.find((action) => action.id === i.actionId);
+          return {
+            actionId: i.actionId,
+            status: i.status,
+            date: i.date,
+            shortTitle: ja?.shortTitle,
+          };
+        });
         const pacing = computePacingAlertFromItems(c, items);
         return { candidate: c, pacing, stage: getPaceBucket(pacing) };
       })

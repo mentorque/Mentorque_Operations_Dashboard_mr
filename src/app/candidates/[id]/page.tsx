@@ -157,6 +157,10 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           setJourney(loadJourney(candidateData));
         } else {
           setJourney(items);
+          // Clear stale localStorage journey so DB is source of truth
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(`mq-journey-v1-${id}`);
+          }
         }
 
         const savedNotes = await fetch(`/api/candidate-notes/${id}`)

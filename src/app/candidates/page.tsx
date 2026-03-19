@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
+import { CANDIDATES, STAGES, STAGE_STYLES, JOURNEY_ACTIONS } from "@/lib/data";
 import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 import {
   loadCustomCandidates,
@@ -60,7 +60,9 @@ export default function CandidatesPage() {
   useEffect(() => {
     async function load() {
       try {
+        console.log('[DB] Attempting to fetch /api/candidates...')
         const res = await fetch('/api/candidates');
+        console.log('[DB] Response status:', res.status)
         const data = (await res.json()) as Array<{
           id: string;
           name: string;
@@ -78,6 +80,10 @@ export default function CandidatesPage() {
           }>;
           notes?: string;
         }>;
+        console.log('[DB] Candidates received:', data.length, data)
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error('API returned empty data')
+        }
         const mapped = data.map((c) => ({
           id: c.id,
           name: c.name,
@@ -96,7 +102,8 @@ export default function CandidatesPage() {
           notes: c.notes ?? undefined,
         }));
         setAllCandidatesFromApi(mapped);
-      } catch {
+      } catch (err) {
+        console.error('[DB] API failed, falling back to localStorage:', err)
         setCustomCandidates(loadCustomCandidates());
       }
       setDeletedCandidates(loadDeletedCandidates());
@@ -203,7 +210,15 @@ export default function CandidatesPage() {
     if (!mounted) return new Map<string, PacingAlert>();
     const map = new Map<string, PacingAlert>();
     for (const c of filtered) {
-      if (!c.isAlumni) map.set(c.id, computePacingAlert(c));
+      if (!c.isAlumni) {
+        const items = c.actions.map((i) => ({
+          actionId: i.actionId,
+          status: i.status,
+          date: i.date,
+          shortTitle: JOURNEY_ACTIONS.find((ja) => ja.id === i.actionId)?.shortTitle,
+        }));
+        map.set(c.id, computePacingAlertFromItems(c, items));
+      }
     }
     return map;
   }, [filtered, journeyVersion, mounted]);
