@@ -11,7 +11,6 @@ import {
   getStageAgeDays,
   getPaceBucket,
   upsertStageTracking,
-  computePacingAlert,
   computePacingAlertFromItems,
   type PacingAlert,
 } from "@/lib/ops-store";
@@ -123,6 +122,7 @@ export default function CandidatesPage() {
     return candidates.filter((c) => !excluded.has(c.id));
   }, [allCandidatesFromApi, customCandidates, deletedCandidates, optedOutCandidates]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveDataMap = useMemo(() => {
     if (!mounted) return new Map<string, LiveCandidateInfo>();
     const map = new Map<string, LiveCandidateInfo>();
@@ -206,6 +206,7 @@ export default function CandidatesPage() {
   }, [enrichedCandidates, query, stageFilter, riskFilter, batchFilter, alumniOnly]);
 
   // ── Pacing analysis ─────────────────────────────────────────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const pacingMap = useMemo(() => {
     if (!mounted) return new Map<string, PacingAlert>();
     const map = new Map<string, PacingAlert>();
