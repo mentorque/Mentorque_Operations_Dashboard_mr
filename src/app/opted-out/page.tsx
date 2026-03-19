@@ -3,54 +3,33 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
-import type { Candidate } from "@/lib/data";
-import {
-  loadCustomCandidates,
-  loadMentorOverrides,
-  loadOptedOutCandidates,
-  reinstateCandidate,
-} from "@/lib/ops-store";
+import { loadCustomCandidates, loadOptedOutCandidates, reinstateCandidate } from "@/lib/ops-store";
 
 export default function OptedOutPage() {
-  const [, setCustomCandidates] = useState<Candidate[]>([]);
-  const [, setMentorOverrides] = useState<Record<string, string>>({});
   const [optedOutCandidates, setOptedOutCandidates] = useState<any[]>([]);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/candidates?optedOut=true')
-      const data: Array<{
-        id: string;
-        name: string;
-        role: string;
-        currentStageId: string;
-        optedOut: boolean;
-        journeyItems?: { status: string }[];
-      }> = await res.json()
-      if (Array.isArray(data) && data.length > 0) {
-        setOptedOutCandidates(data)
-      }
+      const res = await fetch("/api/candidates?optedOut=true");
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setOptedOutCandidates(Array.isArray(data) ? data : []);
     } catch {
-      // fallback to localStorage and seeded/custom data
+      // fallback to localStorage
       const ids = loadOptedOutCandidates();
-      const overrides = loadMentorOverrides();
-      const base = [...CANDIDATES, ...loadCustomCandidates()].map((c) => ({
-        ...c,
-        mentor: overrides[c.id] ?? c.mentor,
-      }));
-      setOptedOutCandidates(base.filter((c) => ids.includes(c.id)));
+      const all = [...CANDIDATES, ...loadCustomCandidates()];
+      const opted = all.filter((c) => ids.includes(c.id));
+      setOptedOutCandidates(opted);
     }
-    setCustomCandidates(loadCustomCandidates());
-    setMentorOverrides(loadMentorOverrides());
-  }
+  }, []);
 
   useEffect(() => {
-    load()
-    const interval = setInterval(load, 5000)
-    return () => clearInterval(interval)
-  }, [])
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, [load]);
 
   const optedOutList = useMemo(
     () => (optedOutCandidates ?? []),
@@ -66,17 +45,31 @@ export default function OptedOutPage() {
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-  }, []);
+  }, [load]);
 
-  const handleReinstate = async (id: string) => {
-    reinstateCandidate(id);
-    await fetch(`/api/candidates/${id}/opted-out`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ optedOut: false }),
-    }).catch(() => {});
-    await load();
-  };
+  async function handleReinstate(candidateId: string) {
+    try {
+      // Update DB first
+      const res = await fetch(`/api/candidates/${candidateId}/opted-out`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optedOut: false }),
+      });
+      if (!res.ok) {
+        console.error("Reinstate failed:", await res.text());
+        return;
+      }
+      // Update localStorage fallback
+      reinstateCandidate(candidateId);
+      // Immediately reload the opted-out list
+      await load();
+    } catch (err) {
+      console.error("Reinstate error:", err);
+      // Try localStorage fallback
+      reinstateCandidate(candidateId);
+      await load();
+    }
+  }
 
   const hasOptedOut = optedOutList.length > 0;
 

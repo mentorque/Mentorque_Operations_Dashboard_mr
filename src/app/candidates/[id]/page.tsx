@@ -241,37 +241,47 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   }, [journey, candidate]);
 
   useEffect(() => {
-    if (!candidate) return
+    if (!candidate) return;
 
-    async function refreshJourney() {
+    const interval = setInterval(async () => {
+      // Skip if user made any change in the last 10 seconds
+      if (Date.now() - lastUserActionRef.current < 10000) return;
+      // Skip if currently editing
+      if (editingId !== null) return;
+
       try {
-        if (Date.now() - lastUserActionRef.current < 3000) return;
-        const res = await fetch(`/api/candidates/${candidate!.id}/journey`)
-        if (!res.ok) return
-        const items = await res.json()
+        isPollingUpdate.current = true;
+        const res = await fetch(`/api/candidates/${candidate.id}/journey`);
+        if (!res.ok) return;
+        const items = await res.json();
         if (Array.isArray(items) && items.length > 0) {
-          isPollingUpdate.current = true;
-          setJourney(items.map((ji: any) => ({
-            instanceId: ji.instanceId,
-            actionId: ji.actionId,
-            stageId: ji.stageId,
-            shortTitle: ji.shortTitle,
-            title: ji.title ?? '',
-            status: ji.status,
-            date: ji.date ?? undefined,
-            comment: ji.comment ?? undefined,
-            poc: ji.poc ?? undefined,
-            duration: ji.duration ?? undefined,
-            isCustom: ji.isCustom,
-          })));
-          setTimeout(() => { isPollingUpdate.current = false; }, 100);
+          setJourney(
+            items.map((ji: any) => ({
+              instanceId: ji.instanceId,
+              actionId: ji.actionId,
+              stageId: ji.stageId,
+              shortTitle: ji.shortTitle,
+              title: ji.title ?? "",
+              status: ji.status,
+              date: ji.date ?? undefined,
+              comment: ji.comment ?? undefined,
+              poc: ji.poc ?? undefined,
+              duration: ji.duration ?? undefined,
+              isCustom: ji.isCustom,
+            })),
+          );
         }
-      } catch { /* silent */ }
-    }
+      } catch {
+        // silent
+      } finally {
+        setTimeout(() => {
+          isPollingUpdate.current = false;
+        }, 100);
+      }
+    }, 5000);
 
-    const interval = setInterval(refreshJourney, 5000)
-    return () => clearInterval(interval)
-  }, [candidate])
+    return () => clearInterval(interval);
+  }, [candidate, editingId]);
 
   // DnD sensors — must be before early returns to obey Rules of Hooks
   const sensors = useSensors(
