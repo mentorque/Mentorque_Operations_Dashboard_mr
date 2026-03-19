@@ -18,12 +18,28 @@ export default function OptedOutPage() {
   const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
+  async function load() {
+    try {
+      const res = await fetch('/api/candidates')
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        const optedOut = data.filter((c: any) => c.optedOut)
+        setOptedOutCandidates(optedOut.map((c: any) => c.id))
+      }
+    } catch {
+      // fallback to localStorage
+      setOptedOutCandidates(loadOptedOutCandidates())
+    }
     setCustomCandidates(loadCustomCandidates());
     setMentorOverrides(loadMentorOverrides());
-    setOptedOutCandidates(loadOptedOutCandidates());
-    setMounted(true);
-  }, []);
+    setMounted(true)
+  }
+
+  useEffect(() => {
+    load()
+    const interval = setInterval(load, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const allCandidates = useMemo(() => {
     return [...CANDIDATES, ...customCandidates].map((c) => ({
@@ -48,9 +64,15 @@ export default function OptedOutPage() {
     return () => window.removeEventListener("storage", handler);
   }, []);
 
-  const handleReinstate = (id: string) => {
+  const handleReinstate = async (id: string) => {
     reinstateCandidate(id);
     setOptedOutCandidates(loadOptedOutCandidates());
+    await fetch(`/api/candidates/${id}/opted-out`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optedOut: false }),
+    }).catch(() => {});
+    await load();
   };
 
   const hasOptedOut = optedOutList.length > 0;

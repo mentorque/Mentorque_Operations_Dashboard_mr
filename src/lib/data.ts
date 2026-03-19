@@ -44,6 +44,7 @@ export interface Candidate {
   currentStageId: StageId;
   riskLevel: RiskLevel;
   isAlumni: boolean;
+  optedOut?: boolean;
   enrolledDate: string;
   actions: CandidateAction[];
   notes?: string;

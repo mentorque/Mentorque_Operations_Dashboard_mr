@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 interface RouteParams {
@@ -80,6 +80,24 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
     return NextResponse.json(
       { error: 'Failed to update candidate' },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await prisma.candidate.delete({
+      where: { id: params.id },
+    });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting candidate', error);
+    return NextResponse.json(
+      { error: 'Failed to delete candidate' },
       { status: 500 },
     );
   }

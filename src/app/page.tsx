@@ -46,6 +46,7 @@ export default function HomePage() {
   const [newCandidateRole, setNewCandidateRole] = useState("");
   const [newCandidateStage, setNewCandidateStage] = useState<StageId>("onboarding");
   const [newCandidateMentor, setNewCandidateMentor] = useState("");
+  const [enrolledDateInput, setEnrolledDateInput] = useState("");
 
   const [mentorCandidateId, setMentorCandidateId] = useState("");
   const [mentorName, setMentorName] = useState("");
@@ -111,10 +112,41 @@ export default function HomePage() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!mounted) return;
+
+    async function refresh() {
+      try {
+        const res = await fetch('/api/candidates')
+        if (!res.ok) return
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          setApiCandidates(data.map((c: any) => ({
+            ...c,
+            actions: c.journeyItems?.map((ji: any) => ({
+              actionId: ji.actionId,
+              status: ji.status,
+              date: ji.date ?? undefined,
+              comment: ji.comment ?? undefined,
+            })) ?? c.actions ?? [],
+          })))
+        }
+      } catch { /* silent */ }
+    }
+
+    const interval = setInterval(refresh, 5000) // every 5 seconds
+    return () => clearInterval(interval)
+  }, [mounted])
+
   const allCandidates = useMemo(() => {
     const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
     if (apiCandidates.length > 0) {
-      return apiCandidates.filter((c) => !excluded.has(c.id));
+      return apiCandidates
+        .filter((c) => !c.optedOut && !excluded.has(c.id))
+        .map((c) => ({
+          ...c,
+          mentor: mentorOverrides[c.id] ?? c.mentor,
+        }));
     }
     return [...CANDIDATES, ...customCandidates]
       .filter((c) => !excluded.has(c.id))
@@ -240,20 +272,86 @@ export default function HomePage() {
     : "";
 
   function handleCreateCandidate() {
-    if (!newCandidateName.trim()) return;
-    createCandidate({
-      name: newCandidateName.trim(),
-      role: newCandidateRole.trim() || "TBD",
-      mentor: newCandidateMentor.trim() || "TBD",
-      stageId: newCandidateStage,
-    });
-    setCustomCandidates(loadCustomCandidates());
-    setMentorCatalog(loadMentorCatalog());
+    if (!newCandidateName.trim()) {
+      console.error("[CreateCandidate] Name is required");
+      return;
+    }
+    try {
+      const enrolledDate = enrolledDateInput
+        ? new Date(enrolledDateInput).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : new Date().toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
+
+      const candidate = createCandidate({
+        name: newCandidateName.trim(),
+        role: newCandidateRole.trim() || "TBD",
+        mentor: newCandidateMentor.trim() || "TBD",
+        stageId: newCandidateStage,
+        enrolledDate,
+      });
+
+      (async () => {
+        try {
+          const res = await fetch("/api/candidates", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: candidate.id,
+              name: candidate.name,
+              role: candidate.role,
+              mentor: candidate.mentor,
+              currentStageId: candidate.currentStageId,
+              riskLevel: candidate.riskLevel,
+              isAlumni: candidate.isAlumni,
+              enrolledDate: candidate.enrolledDate,
+              notes: candidate.notes ?? "",
+            }),
+          });
+          if (!res.ok) {
+            console.error("[CreateCandidate] API error status:", res.status);
+          } else {
+            const refreshRes = await fetch("/api/candidates");
+            if (refreshRes.ok) {
+              const data = await refreshRes.json();
+              if (Array.isArray(data) && data.length > 0) {
+                setApiCandidates(
+                  data.map((c: any) => ({
+                    ...c,
+                    actions:
+                      c.journeyItems?.map((ji: any) => ({
+                        actionId: ji.actionId,
+                        status: ji.status,
+                        date: ji.date ?? undefined,
+                        comment: ji.comment ?? undefined,
+                      })) ?? c.actions ?? [],
+                  })),
+                );
+              }
+            }
+          }
+        } catch (err) {
+          console.error("[CreateCandidate] API request failed:", err);
+        } finally {
+          setCustomCandidates(loadCustomCandidates());
+          setMentorCatalog(loadMentorCatalog());
+        }
+      })();
+    } catch (err) {
+      console.error("[CreateCandidate] Unexpected error:", err);
+    }
     setShowCreateCandidate(false);
     setNewCandidateName("");
     setNewCandidateRole("");
     setNewCandidateMentor("");
     setNewCandidateStage("onboarding");
+    setEnrolledDateInput("");
   }
 
   function handleAllotMentor() {
@@ -540,6 +638,17 @@ export default function HomePage() {
             <select value={newCandidateStage} onChange={(e) => setNewCandidateStage(e.target.value as StageId)} className={inputCls}>
               {STAGES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                Enrollment Date
+              </label>
+              <input
+                type="date"
+                value={enrolledDateInput}
+                onChange={(e) => setEnrolledDateInput(e.target.value)}
+                className={inputCls}
+              />
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setShowCreateCandidate(false)} className={secondaryBtn}>Cancel</button>
               <button onClick={handleCreateCandidate} className={primaryBtn}>Create</button>

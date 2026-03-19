@@ -112,10 +112,36 @@ export default function CandidatesPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!mounted) return;
+
+    async function refresh() {
+      try {
+        const res = await fetch('/api/candidates')
+        if (!res.ok) return
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          setAllCandidatesFromApi(data.map((c: any) => ({
+            ...c,
+            actions: c.journeyItems?.map((ji: any) => ({
+              actionId: ji.actionId,
+              status: ji.status,
+              date: ji.date ?? undefined,
+              comment: ji.comment ?? undefined,
+            })) ?? c.actions ?? [],
+          })))
+        }
+      } catch { /* silent */ }
+    }
+
+    const interval = setInterval(refresh, 5000)
+    return () => clearInterval(interval)
+  }, [mounted])
+
   const allCandidates = useMemo(() => {
     if (allCandidatesFromApi.length > 0) {
       const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
-      return allCandidatesFromApi.filter((c) => !excluded.has(c.id));
+      return allCandidatesFromApi.filter((c) => !c.optedOut && !excluded.has(c.id));
     }
     const candidates = [...CANDIDATES, ...customCandidates];
     const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);

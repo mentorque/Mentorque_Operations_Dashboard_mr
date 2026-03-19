@@ -15,6 +15,7 @@ model Candidate {
   currentStageId String
   riskLevel    String           @default("normal")
   isAlumni     Boolean          @default(false)
+  optedOut     Boolean          @default(false)
   enrolledDate String
   notes        String?
   createdAt    DateTime         @default(now())

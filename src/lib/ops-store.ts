@@ -365,6 +365,7 @@ export function createCandidate(input: {
   mentor?: string;
   stageId: StageId;
   riskLevel?: RiskLevel;
+  enrolledDate?: string;
 }): Candidate {
   const current = loadCustomCandidates();
   const baseId = slugify(input.name) || "candidate";
@@ -378,7 +379,9 @@ export function createCandidate(input: {
     currentStageId: input.stageId,
     riskLevel: input.riskLevel ?? "normal",
     isAlumni: input.stageId === "alumni",
-    enrolledDate: now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    enrolledDate:
+      input.enrolledDate ??
+      now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
     actions: buildDefaultActions(),
     notes: "New candidate added from Ops dashboard.",
   };

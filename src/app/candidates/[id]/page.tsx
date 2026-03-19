@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -62,6 +62,7 @@ type SafetyLevel = "safe" | "watch" | "at-risk";
 
 export default function CandidateDetailPage({ params }: { params: { id: string } }) {
   const id = typeof params === "object" && params && "id" in params ? params.id : "";
+  const isPollingUpdate = useRef(false);
   const [loaded, setLoaded] = useState(false);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [mentorCatalog, setMentorCatalog] = useState<string[]>([]);
@@ -197,22 +198,76 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   // Auto-save to localStorage and sync stage tracking
   useEffect(() => {
     if (!candidate) return;
+    if (isPollingUpdate.current) return;
     saveJourney(candidate.id, journey);
     const live = computeLiveInfoFromJourney(journey, candidate);
     upsertStageTracking(candidate.id, live.currentStageId);
 
-    (async () => {
+    const saveTimeout = setTimeout(async () => {
       try {
         await fetch(`/api/candidates/${candidate.id}/journey`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(journey.map((item, idx) => ({ ...item, orderIndex: idx }))),
+          body: JSON.stringify(
+            journey.map((item, idx) => ({
+              instanceId: item.instanceId,
+              actionId: item.actionId ?? null,
+              stageId: item.stageId ?? null,
+              shortTitle: item.shortTitle ?? "",
+              title: item.title ?? null,
+              status: item.status,
+              date: item.date ?? null,
+              comment: item.comment ?? null,
+              poc: item.poc ?? null,
+              duration: item.duration ?? null,
+              isCustom: item.isCustom ?? false,
+              orderIndex: idx,
+            })),
+          ),
         });
+        await fetch(`/api/candidates/${candidate.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currentStageId: live.currentStageId }),
+        }).catch(() => {});
       } catch {
         // silent localStorage fallback
       }
-    })();
+    }, 1000);
+    return () => clearTimeout(saveTimeout);
   }, [journey, candidate]);
+
+  useEffect(() => {
+    if (!candidate) return
+
+    async function refreshJourney() {
+      try {
+        const res = await fetch(`/api/candidates/${candidate!.id}/journey`)
+        if (!res.ok) return
+        const items = await res.json()
+        if (Array.isArray(items) && items.length > 0) {
+          isPollingUpdate.current = true;
+          setJourney(items.map((ji: any) => ({
+            instanceId: ji.instanceId,
+            actionId: ji.actionId,
+            stageId: ji.stageId,
+            shortTitle: ji.shortTitle,
+            title: ji.title ?? '',
+            status: ji.status,
+            date: ji.date ?? undefined,
+            comment: ji.comment ?? undefined,
+            poc: ji.poc ?? undefined,
+            duration: ji.duration ?? undefined,
+            isCustom: ji.isCustom,
+          })));
+          setTimeout(() => { isPollingUpdate.current = false; }, 100);
+        }
+      } catch { /* silent */ }
+    }
+
+    const interval = setInterval(refreshJourney, 5000)
+    return () => clearInterval(interval)
+  }, [candidate])
 
   // DnD sensors — must be before early returns to obey Rules of Hooks
   const sensors = useSensors(
@@ -276,6 +331,32 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   );
   const hasBlockerAhead = !!immediateBlocker && immediateBlocker !== currentAct;
 
+  async function refreshFromDB() {
+    try {
+      const res = await fetch(`/api/candidates/${id}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setCandidate(data)
+      if (Array.isArray(data.journeyItems) && data.journeyItems.length > 0) {
+        isPollingUpdate.current = true;
+        setJourney(data.journeyItems.map((ji: any) => ({
+          instanceId: ji.instanceId,
+          actionId: ji.actionId,
+          stageId: ji.stageId,
+          shortTitle: ji.shortTitle,
+          title: ji.title ?? '',
+          status: ji.status,
+          date: ji.date ?? undefined,
+          comment: ji.comment ?? undefined,
+          poc: ji.poc ?? undefined,
+          duration: ji.duration ?? undefined,
+          isCustom: ji.isCustom,
+        })));
+        setTimeout(() => { isPollingUpdate.current = false; }, 100);
+      }
+    } catch { /* silent */ }
+  }
+
   // Reactive: use the same live pace logic as the dashboard/cards
   const pacing = mounted
     ? computePacingAlertFromItems(candidate, journey.map((i) => ({
@@ -316,6 +397,12 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ candidateId: candidate.id, mentorName: mentorInput.trim() }),
       });
+      await fetch(`/api/candidates/${candidate.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mentor: mentorInput.trim() }),
+      }).catch(() => {});
+      await refreshFromDB();
     } catch {
       // silent fallback
     }
@@ -328,7 +415,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     setNewMentorName("");
   }
 
-  function handleDeleteCandidate() {
+  async function handleDeleteCandidate() {
     if (!candidate) return;
     const fromSeed = CANDIDATES.some((c) => c.id === candidate.id);
     if (fromSeed) {
@@ -340,12 +427,21 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     if (typeof window !== "undefined") {
       localStorage.removeItem(`mq-journey-v1-${candidate.id}`);
     }
+    await fetch(`/api/candidates/${candidate.id}`, {
+      method: "DELETE",
+    }).catch(() => {});
     router.push("/candidates");
   }
 
-  function handleOptOutCandidate() {
+  async function handleOptOutCandidate() {
     if (!candidate) return;
     optOutCandidate(candidate.id);
+    await fetch(`/api/candidates/${candidate.id}/opted-out`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optedOut: true }),
+    }).catch(() => {});
+    await refreshFromDB();
     router.push("/candidates");
   }
 
@@ -754,6 +850,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ content: trimmed }),
                         });
+                        await refreshFromDB();
                       } catch {
                         // silent fallback
                       }
