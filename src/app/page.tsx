@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
-import type { Candidate, StageId } from "@/lib/data";
+import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 
 import {
   addMentorName,
@@ -52,27 +52,71 @@ export default function HomePage() {
   const [mentorName, setMentorName] = useState("");
   const [addedMentorName, setAddedMentorName] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [apiCandidates, setApiCandidates] = useState<Candidate[]>([]);
 
   useEffect(() => {
-    const custom = loadCustomCandidates();
-    const overrides = loadMentorOverrides();
-    setCustomCandidates(custom);
-    setMentorOverrides(overrides);
-    setDeletedCandidates(loadDeletedCandidates());
-    setOptedOutCandidates(loadOptedOutCandidates());
-    setMentorCatalog(loadMentorCatalog());
-    setMounted(true);
+    async function load() {
+      try {
+        const res = await fetch('/api/candidates');
+        const data = (await res.json()) as Array<{
+          id: string;
+          name: string;
+          role: string;
+          mentor: string;
+          currentStageId: StageId;
+          riskLevel: RiskLevel;
+          isAlumni: boolean;
+          enrolledDate: string;
+          journeyItems?: Array<{
+            actionId: number;
+            status: ActionStatus;
+            date?: string;
+            comment?: string;
+          }>;
+          notes?: string;
+        }>;
+        const mapped = data.map((c) => ({
+          id: c.id,
+          name: c.name,
+          role: c.role,
+          mentor: c.mentor,
+          currentStageId: c.currentStageId,
+          riskLevel: c.riskLevel,
+          isAlumni: c.isAlumni,
+          enrolledDate: c.enrolledDate,
+          actions: (c.journeyItems ?? []).map((ji) => ({
+            actionId: ji.actionId,
+            status: ji.status,
+            date: ji.date ?? undefined,
+            comment: ji.comment ?? undefined,
+          })),
+          notes: c.notes ?? undefined,
+        }));
+        setApiCandidates(mapped);
+      } catch {
+        setCustomCandidates(loadCustomCandidates());
+      }
+      setMentorOverrides(loadMentorOverrides());
+      setDeletedCandidates(loadDeletedCandidates());
+      setOptedOutCandidates(loadOptedOutCandidates());
+      setMentorCatalog(loadMentorCatalog());
+      setMounted(true);
+    }
+    load();
   }, []);
 
   const allCandidates = useMemo(() => {
     const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
+    if (apiCandidates.length > 0) {
+      return apiCandidates.filter((c) => !excluded.has(c.id));
+    }
     return [...CANDIDATES, ...customCandidates]
       .filter((c) => !excluded.has(c.id))
       .map((c) => ({
         ...c,
         mentor: mentorOverrides[c.id] ?? c.mentor,
       }));
-  }, [customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
+  }, [apiCandidates, customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveDataMap = useMemo(() => {

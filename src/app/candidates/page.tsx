@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
-import type { Candidate, RiskLevel, StageId } from "@/lib/data";
+import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 import {
   loadCustomCandidates,
   loadDeletedCandidates,
@@ -57,16 +57,63 @@ export default function CandidatesPage() {
   const [pacingExpanded, setPacingExpanded] = useState(false);
   const [journeyVersion, setJourneyVersion] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [allCandidatesFromApi, setAllCandidatesFromApi] = useState<Candidate[]>([]);
 
   useEffect(() => {
-    setCustomCandidates(loadCustomCandidates());
-    setMentorOverrides(loadMentorOverrides());
-    setDeletedCandidates(loadDeletedCandidates());
-    setOptedOutCandidates(loadOptedOutCandidates());
-    setMounted(true);
+    async function load() {
+      try {
+        const res = await fetch('/api/candidates');
+      const data = (await res.json()) as Array<{
+        id: string;
+        name: string;
+        role: string;
+        mentor: string;
+        currentStageId: StageId;
+        riskLevel: RiskLevel;
+        isAlumni: boolean;
+        enrolledDate: string;
+        journeyItems?: Array<{
+          actionId: number;
+          status: ActionStatus;
+          date?: string;
+          comment?: string;
+        }>;
+        notes?: string;
+      }>;
+      const mapped = data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        role: c.role,
+        mentor: c.mentor,
+        currentStageId: c.currentStageId,
+        riskLevel: c.riskLevel,
+        isAlumni: c.isAlumni,
+        enrolledDate: c.enrolledDate,
+        actions: (c.journeyItems ?? []).map((ji) => ({
+          actionId: ji.actionId,
+          status: ji.status,
+          date: ji.date ?? undefined,
+          comment: ji.comment ?? undefined,
+        })),
+        notes: c.notes ?? undefined,
+      }));
+        setAllCandidatesFromApi(mapped);
+      } catch {
+        setCustomCandidates(loadCustomCandidates());
+      }
+      setMentorOverrides(loadMentorOverrides());
+      setDeletedCandidates(loadDeletedCandidates());
+      setOptedOutCandidates(loadOptedOutCandidates());
+      setMounted(true);
+    }
+    load();
   }, []);
 
   const allCandidates = useMemo(() => {
+    if (allCandidatesFromApi.length > 0) {
+      const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
+      return allCandidatesFromApi.filter((c) => !excluded.has(c.id));
+    }
     const overrides = mentorOverrides;
     const candidates = [...CANDIDATES, ...customCandidates];
     const candidatesWithMentors = candidates.map((c) => ({
@@ -75,7 +122,7 @@ export default function CandidatesPage() {
     }));
     const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
     return candidatesWithMentors.filter((c) => !excluded.has(c.id));
-  }, [customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
+  }, [allCandidatesFromApi, customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
 
   const liveDataMap = useMemo(() => {
     if (!mounted) return new Map<string, LiveCandidateInfo>();

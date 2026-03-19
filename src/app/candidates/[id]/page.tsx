@@ -25,7 +25,7 @@ import {
   STAGE_STYLES,
   MESSAGE_TEMPLATES,
 } from "@/lib/data";
-import type { ActionStatus, Candidate } from "@/lib/data";
+import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 import {
   type SessionItem,
   loadJourney,
@@ -92,28 +92,97 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       setCandidate(null);
       return;
     }
-    const overrides = loadMentorOverrides();
-    const base = CANDIDATES.find((c) => c.id === id);
-    const custom = loadCustomCandidates().find((c) => c.id === id);
-    const found = base ?? custom ?? null;
-    if (!found) {
-      setCandidate(null);
+    async function load() {
+      try {
+        const res = await fetch(`/api/candidates/${id}`);
+        if (!res.ok) throw new Error("not found");
+        const data = (await res.json()) as {
+          id: string;
+          name: string;
+          role: string;
+          mentor: string;
+          currentStageId: StageId;
+          riskLevel: RiskLevel;
+          isAlumni: boolean;
+          enrolledDate: string;
+          journeyItems?: Array<{
+            instanceId: string;
+            actionId?: number;
+            stageId?: StageId;
+            shortTitle: string;
+            title?: string;
+            status: ActionStatus;
+            date?: string;
+            comment?: string;
+            poc?: string;
+            duration?: string;
+            isCustom: boolean;
+          }>;
+          notes?: string;
+        };
+        const candidateData: Candidate = {
+          id: data.id,
+          name: data.name,
+          role: data.role,
+          mentor: data.mentor,
+          currentStageId: data.currentStageId,
+          riskLevel: data.riskLevel,
+          isAlumni: data.isAlumni,
+          enrolledDate: data.enrolledDate,
+          actions: (data.journeyItems ?? []).map((ji) => ({
+            actionId: ji.actionId ?? 0,
+            status: ji.status,
+            date: ji.date ?? undefined,
+            comment: ji.comment ?? undefined,
+          })),
+          notes: data.notes ?? undefined,
+        };
+        setCandidate(candidateData);
+        setMentorInput(candidateData.mentor === "TBD" ? "" : candidateData.mentor);
+        const items = (data.journeyItems ?? []).map((ji) => ({
+          instanceId: ji.instanceId,
+          actionId: ji.actionId,
+          stageId: ji.stageId,
+          shortTitle: ji.shortTitle,
+          title: ji.title ?? "",
+          status: ji.status,
+          date: ji.date ?? undefined,
+          comment: ji.comment ?? undefined,
+          poc: ji.poc ?? undefined,
+          duration: ji.duration ?? undefined,
+          isCustom: ji.isCustom,
+        }));
+        setJourney(items.length > 0 ? items : loadJourney(candidateData));
+
+        const savedNotes = await fetch(`/api/candidate-notes/${id}`)
+          .then((r) => r.json())
+          .then((d) => d.content ?? "");
+        setCandidateNotes(savedNotes);
+        setNotesInput(savedNotes);
+      } catch {
+        const overrides = loadMentorOverrides();
+        const base = CANDIDATES.find((c) => c.id === id);
+        const custom = loadCustomCandidates().find((c) => c.id === id);
+        const found = base ?? custom ?? null;
+        if (!found) {
+          setCandidate(null);
+          setLoaded(true);
+          return;
+        }
+        const resolved = { ...found, mentor: overrides[found.id] ?? found.mentor };
+        setCandidate(resolved);
+        setMentorInput(resolved.mentor === "TBD" ? "" : resolved.mentor);
+        setJourney(loadJourney(resolved));
+        const notes = loadCandidateNotes(id) ?? "";
+        setCandidateNotes(notes);
+        setNotesInput(notes);
+      }
+      setMentorCatalog(loadMentorCatalog());
+      upsertStageTracking(id, "onboarding");
+      setStageAge(getStageAgeDays(id));
       setLoaded(true);
-      return;
     }
-    const resolvedMentor = overrides[found.id] ?? found.mentor;
-    const resolved = { ...found, mentor: resolvedMentor };
-    setCandidate(resolved);
-    setMentorInput(resolvedMentor === "TBD" ? "" : resolvedMentor);
-    setMentorCatalog(loadMentorCatalog());
-    setJourney(loadJourney(resolved));
-    const savedNotes = loadCandidateNotes(resolved.id);
-    const initialNotes = savedNotes ?? "";
-    setCandidateNotes(initialNotes);
-    setNotesInput(initialNotes);
-    upsertStageTracking(resolved.id, resolved.currentStageId);
-    setStageAge(getStageAgeDays(resolved.id));
-    setLoaded(true);
+    load();
   }, [id]);
 
   // Auto-save to localStorage and sync stage tracking
@@ -122,6 +191,18 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     saveJourney(candidate.id, journey);
     const live = computeLiveInfoFromJourney(journey, candidate);
     upsertStageTracking(candidate.id, live.currentStageId);
+
+    (async () => {
+      try {
+        await fetch(`/api/candidates/${candidate.id}/journey`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(journey.map((item, idx) => ({ ...item, orderIndex: idx }))),
+        });
+      } catch {
+        // silent localStorage fallback
+      }
+    })();
   }, [journey, candidate]);
 
   // DnD sensors — must be before early returns to obey Rules of Hooks
@@ -214,12 +295,21 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const safetyLevel: SafetyLevel = paceBucket === "on-track" ? "safe" : paceBucket;
 
   const visibleJourney = hideDone ? journey.filter((i) => i.status !== "done") : journey;
-  function handleMentorSave() {
+  async function handleMentorSave() {
     if (!candidate) return;
     if (!mentorInput.trim()) return;
     saveMentorOverride(candidate.id, mentorInput.trim());
     setCandidate((prev) => (prev ? { ...prev, mentor: mentorInput.trim() } : prev));
     setMentorCatalog(loadMentorCatalog());
+    try {
+      await fetch('/api/mentor-overrides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId: candidate.id, mentorName: mentorInput.trim() }),
+      });
+    } catch {
+      // silent fallback
+    }
   }
 
   function handleAddMentorName() {
@@ -646,9 +736,18 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const trimmed = notesInput.trim();
                       saveCandidateNotes(candidate.id, trimmed);
+                      try {
+                        await fetch(`/api/candidate-notes/${candidate.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ content: trimmed }),
+                        });
+                      } catch {
+                        // silent fallback
+                      }
                       setCandidateNotes(trimmed);
                       setEditingNotes(false);
                     }}
