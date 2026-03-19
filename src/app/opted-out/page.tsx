@@ -15,9 +15,9 @@ import {
 import { computeLiveCandidateInfo } from "@/lib/session-store";
 
 export default function OptedOutPage() {
-  const [customCandidates, setCustomCandidates] = useState<Candidate[]>([]);
-  const [mentorOverrides, setMentorOverrides] = useState<Record<string, string>>({});
-  const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
+  const [, setCustomCandidates] = useState<Candidate[]>([]);
+  const [, setMentorOverrides] = useState<Record<string, string>>({});
+  const [optedOutCandidates, setOptedOutCandidates] = useState<any[]>([]);
   const [mounted, setMounted] = useState(false);
 
   async function load() {
@@ -32,11 +32,17 @@ export default function OptedOutPage() {
         journeyItems?: { status: string }[];
       }> = await res.json()
       if (Array.isArray(data) && data.length > 0) {
-        setOptedOutCandidates(data.map((c) => c.id))
+        setOptedOutCandidates(data)
       }
     } catch {
-      // fallback to localStorage
-      setOptedOutCandidates(loadOptedOutCandidates())
+      // fallback to localStorage and seeded/custom data
+      const ids = loadOptedOutCandidates();
+      const overrides = loadMentorOverrides();
+      const base = [...CANDIDATES, ...loadCustomCandidates()].map((c) => ({
+        ...c,
+        mentor: overrides[c.id] ?? c.mentor,
+      }));
+      setOptedOutCandidates(base.filter((c) => ids.includes(c.id)));
     }
     setCustomCandidates(loadCustomCandidates());
     setMentorOverrides(loadMentorOverrides());
@@ -49,24 +55,14 @@ export default function OptedOutPage() {
     return () => clearInterval(interval)
   }, [])
 
-  const allCandidates = useMemo(() => {
-    return [...CANDIDATES, ...customCandidates].map((c) => ({
-      ...c,
-      mentor: mentorOverrides[c.id] ?? c.mentor,
-    }));
-  }, [customCandidates, mentorOverrides]);
-
-  const optedOutList = useMemo(() => {
-    const setOpted = new Set(optedOutCandidates);
-    return allCandidates.filter((c) => setOpted.has(c.id));
-  }, [allCandidates, optedOutCandidates]);
+  const optedOutList = useMemo(() => optedOutCandidates, [optedOutCandidates]);
 
   const [refreshVersion, setRefreshVersion] = useState(0);
 
   useEffect(() => {
     const handler = () => {
-      setOptedOutCandidates(loadOptedOutCandidates());
       setRefreshVersion((v) => v + 1);
+      load();
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
@@ -74,7 +70,6 @@ export default function OptedOutPage() {
 
   const handleReinstate = async (id: string) => {
     reinstateCandidate(id);
-    setOptedOutCandidates(loadOptedOutCandidates());
     await fetch(`/api/candidates/${id}/opted-out`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
