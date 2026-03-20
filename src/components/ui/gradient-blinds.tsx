@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
 import './gradient-blinds.css';
 
@@ -306,7 +306,7 @@ void main() {
         let factor = 1 - Math.exp(-dt / tau);
         if (factor > 1) factor = 1;
         const target = mouseTargetRef.current;
-        const cur = uniforms.iMouse.value;
+        const cur = uniforms.iMouse.value as number[];
         cur[0] += (target[0] - cur[0]) * factor;
         cur[1] += (target[1] - cur[1]) * factor;
       } else {
@@ -384,7 +384,7 @@ void main() {
       className={`gradient-blinds-container ${edgesOnly ? 'gradient-blinds-container--edges' : ''} ${className}`}
       style={{
         ...(mixBlendMode && {
-          mixBlendMode: mixBlendMode
+          mixBlendMode: mixBlendMode as CSSProperties['mixBlendMode']
         }),
         ...edgeMaskStyle
       }}
