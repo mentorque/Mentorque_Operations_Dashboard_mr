@@ -83,27 +83,34 @@ export default function CandidatesPage() {
           notes?: string;
         }>;
         console.log('[DB] Candidates received:', data.length, data)
-        if (!Array.isArray(data) || data.length === 0) {
-          throw new Error('API returned empty data')
+        if (!Array.isArray(data)) {
+          throw new Error('API returned non-array data')
         }
-        const mapped = data.map((c) => ({
-          id: c.id,
-          name: c.name,
-          role: c.role,
-          mentor: c.mentor,
-          currentStageId: c.currentStageId,
-          riskLevel: c.riskLevel,
-          isAlumni: c.isAlumni,
-          enrolledDate: c.enrolledDate,
-          actions: (c.journeyItems ?? []).map((ji) => ({
-            actionId: ji.actionId,
-            status: ji.status,
-            date: ji.date ?? undefined,
-            comment: ji.comment ?? undefined,
-          })),
-          notes: c.notes ?? undefined,
-        }));
-        setAllCandidatesFromApi(mapped);
+
+        // Only fall back to localStorage for network/transport errors.
+        // If the API returns an empty list, treat it as valid and keep `allCandidatesFromApi` empty.
+        if (data.length === 0) {
+          setAllCandidatesFromApi([]);
+        } else {
+          const mapped = data.map((c) => ({
+            id: c.id,
+            name: c.name,
+            role: c.role,
+            mentor: c.mentor,
+            currentStageId: c.currentStageId,
+            riskLevel: c.riskLevel,
+            isAlumni: c.isAlumni,
+            enrolledDate: c.enrolledDate,
+            actions: (c.journeyItems ?? []).map((ji) => ({
+              actionId: ji.actionId,
+              status: ji.status,
+              date: ji.date ?? undefined,
+              comment: ji.comment ?? undefined,
+            })),
+            notes: c.notes ?? undefined,
+          }));
+          setAllCandidatesFromApi(mapped);
+        }
       } catch (err) {
         console.error('[DB] API failed, falling back to localStorage:', err)
         setCustomCandidates(loadCustomCandidates());
@@ -137,7 +144,7 @@ export default function CandidatesPage() {
       } catch { /* silent */ }
     }
 
-    const interval = setInterval(refresh, 5000)
+    const interval = setInterval(refresh, 30000)
     return () => clearInterval(interval)
   }, [mounted])
 

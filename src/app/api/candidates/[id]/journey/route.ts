@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
 
 interface RouteParams {
   params: {
@@ -7,14 +7,36 @@ interface RouteParams {
   };
 }
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
+}
+
+const sql = neon(process.env.DATABASE_URL);
+
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id: candidateId } = params;
 
   try {
-    const items = await prisma.journeyItem.findMany({
-      where: { candidateId },
-      orderBy: { orderIndex: 'asc' },
-    });
+    const items = await sql`
+      SELECT
+        "id",
+        "candidateId",
+        "instanceId",
+        "actionId",
+        "stageId",
+        "shortTitle",
+        "title",
+        "status",
+        "date",
+        "comment",
+        "poc",
+        "duration",
+        "isCustom",
+        "orderIndex"
+      FROM "JourneyItem"
+      WHERE "candidateId" = ${candidateId}
+      ORDER BY "orderIndex" ASC
+    `;
 
     return NextResponse.json(items);
   } catch (error) {
@@ -55,63 +77,86 @@ export async function PUT(request: Request, { params }: RouteParams) {
     }
 
     const upserts = body.map((item: JourneyItemPayload, index: number) => {
-      if (!item.instanceId) {
-        return prisma.journeyItem.create({
-          data: {
-            candidateId,
-            instanceId: `api-${candidateId}-${Date.now()}-${index}`,
-            actionId: item.actionId != null ? Number(item.actionId) : null,
-            stageId: item.stageId ?? null,
-            shortTitle: item.shortTitle ?? '',
-            title: item.title ?? null,
-            status: item.status ?? 'not-done',
-            date: item.date ?? null,
-            comment: item.comment ?? null,
-            poc: item.poc ?? null,
-            duration: item.duration ?? null,
-            isCustom: item.isCustom ?? false,
-            orderIndex: item.orderIndex ?? index,
-          },
-        });
-      }
+      const instanceId = item.instanceId
+        ? item.instanceId
+        : `api-${candidateId}-${Date.now()}-${index}`;
 
-      return prisma.journeyItem.upsert({
-        where: { instanceId: item.instanceId },
-        update: {
-          candidateId,
-          actionId: item.actionId != null ? Number(item.actionId) : null,
-          stageId: item.stageId ?? null,
-          shortTitle: item.shortTitle ?? '',
-          title: item.title ?? null,
-          status: item.status ?? 'not-done',
-          date: item.date ?? null,
-          comment: item.comment ?? null,
-          poc: item.poc ?? null,
-          duration: item.duration ?? null,
-          isCustom: item.isCustom ?? false,
-          orderIndex: item.orderIndex ?? index,
-        },
-        create: {
-          candidateId,
-          instanceId: item.instanceId,
-          actionId: item.actionId != null ? Number(item.actionId) : null,
-          stageId: item.stageId ?? null,
-          shortTitle: item.shortTitle ?? '',
-          title: item.title ?? null,
-          status: item.status ?? 'not-done',
-          date: item.date ?? null,
-          comment: item.comment ?? null,
-          poc: item.poc ?? null,
-          duration: item.duration ?? null,
-          isCustom: item.isCustom ?? false,
-          orderIndex: item.orderIndex ?? index,
-        },
-      });
+      const actionId = item.actionId != null ? Number(item.actionId) : null;
+
+      return sql`
+        INSERT INTO "JourneyItem" (
+          "candidateId",
+          "instanceId",
+          "actionId",
+          "stageId",
+          "shortTitle",
+          "title",
+          "status",
+          "date",
+          "comment",
+          "poc",
+          "duration",
+          "isCustom",
+          "orderIndex"
+        ) VALUES (
+          ${candidateId},
+          ${instanceId},
+          ${actionId},
+          ${item.stageId ?? null},
+          ${item.shortTitle ?? ''},
+          ${item.title ?? null},
+          ${item.status ?? 'not-done'},
+          ${item.date ?? null},
+          ${item.comment ?? null},
+          ${item.poc ?? null},
+          ${item.duration ?? null},
+          ${item.isCustom ?? false},
+          ${item.orderIndex ?? index}
+        )
+        ON CONFLICT ("instanceId") DO UPDATE SET
+          "candidateId" = EXCLUDED."candidateId",
+          "actionId" = EXCLUDED."actionId",
+          "stageId" = EXCLUDED."stageId",
+          "shortTitle" = EXCLUDED."shortTitle",
+          "title" = EXCLUDED."title",
+          "status" = EXCLUDED."status",
+          "date" = EXCLUDED."date",
+          "comment" = EXCLUDED."comment",
+          "poc" = EXCLUDED."poc",
+          "duration" = EXCLUDED."duration",
+          "isCustom" = EXCLUDED."isCustom",
+          "orderIndex" = EXCLUDED."orderIndex"
+        RETURNING
+          "id",
+          "candidateId",
+          "instanceId",
+          "actionId",
+          "stageId",
+          "shortTitle",
+          "title",
+          "status",
+          "date",
+          "comment",
+          "poc",
+          "duration",
+          "isCustom",
+          "orderIndex"
+      `;
     });
 
-    const result = await prisma.$transaction(upserts);
+    const transactionResults = await sql.transaction(upserts);
+    const result = transactionResults.map((rows: any) =>
+      Array.isArray(rows) ? rows[0] : rows
+    );
 
-    return NextResponse.json(result);
+    // Keep deterministic ordering for the client.
+    const sorted = result.slice().sort((a: any, b: any) => {
+      const ao = typeof a?.orderIndex === "number" ? a.orderIndex : Number(a?.orderIndex ?? 0);
+      const bo = typeof b?.orderIndex === "number" ? b.orderIndex : Number(b?.orderIndex ?? 0);
+      return ao - bo;
+    });
+
+    return NextResponse.json(sorted);
   } catch (error) {
     console.error('Error upserting journey items', error);
     return NextResponse.json(

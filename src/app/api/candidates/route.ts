@@ -1,22 +1,104 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
+import { randomUUID } from 'crypto';
 import { JOURNEY_ACTIONS } from '@/lib/data';
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
+}
+
+const sql = neon(process.env.DATABASE_URL);
+
+function groupCandidatesWithJourneyItems(rows: Array<Record<string, any>>) {
+  const map = new Map<string, any>();
+
+  for (const row of rows) {
+    let candidate = map.get(row.id);
+    if (!candidate) {
+      candidate = {
+        id: row.id,
+        name: row.name,
+        role: row.role,
+        mentor: row.mentor,
+        currentStageId: row.currentStageId,
+        riskLevel: row.riskLevel,
+        isAlumni: row.isAlumni,
+        optedOut: row.optedOut,
+        enrolledDate: row.enrolledDate,
+        notes: row.notes,
+        journeyItems: [],
+      };
+      map.set(row.id, candidate);
+    }
+
+    if (row.journeyItemId) {
+      candidate.journeyItems.push({
+        id: row.journeyItemId,
+        candidateId: row.journeyCandidateId,
+        instanceId: row.journeyInstanceId,
+        actionId: row.journeyActionId,
+        stageId: row.journeyStageId,
+        shortTitle: row.journeyShortTitle,
+        title: row.journeyTitle,
+        status: row.journeyStatus,
+        date: row.journeyDate,
+        comment: row.journeyComment,
+        poc: row.journeyPoc,
+        duration: row.journeyDuration,
+        isCustom: row.journeyIsCustom,
+        orderIndex: row.journeyOrderIndex,
+      });
+    }
+  }
+
+  return [...map.values()];
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const optedOut = searchParams.get('optedOut') === 'true';
 
-    const candidates = await prisma.candidate.findMany({
-      where: { optedOut },
-      include: {
-        journeyItems: {
-          orderBy: { orderIndex: 'asc' },
-        },
+    const rows = await sql`
+      SELECT
+        c.id,
+        c.name,
+        c.role,
+        c.mentor,
+        c."currentStageId" AS "currentStageId",
+        c."riskLevel" AS "riskLevel",
+        c."isAlumni" AS "isAlumni",
+        c."optedOut" AS "optedOut",
+        c."enrolledDate" AS "enrolledDate",
+        c.notes AS "notes",
+        ji.id AS "journeyItemId",
+        ji."candidateId" AS "journeyCandidateId",
+        ji."instanceId" AS "journeyInstanceId",
+        ji."actionId" AS "journeyActionId",
+        ji."stageId" AS "journeyStageId",
+        ji."shortTitle" AS "journeyShortTitle",
+        ji.title AS "journeyTitle",
+        ji.status AS "journeyStatus",
+        ji.date AS "journeyDate",
+        ji.comment AS "journeyComment",
+        ji.poc AS "journeyPoc",
+        ji.duration AS "journeyDuration",
+        ji."isCustom" AS "journeyIsCustom",
+        ji."orderIndex" AS "journeyOrderIndex"
+      FROM "Candidate" c
+      LEFT JOIN "JourneyItem" ji
+        ON ji."candidateId" = c.id
+      WHERE c."optedOut" = ${optedOut}
+      ORDER BY c.id ASC, ji."orderIndex" ASC
+    `;
+
+    const candidates = groupCandidatesWithJourneyItems(rows);
+
+    return NextResponse.json(candidates, {
+      headers: {
+        'Cache-Control': 's-maxage=20, stale-while-revalidate=59',
       },
     });
-
-    return NextResponse.json(candidates);
   } catch (error) {
     console.error('Error fetching candidates', error);
     return NextResponse.json(
@@ -49,8 +131,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const candidateId = id || randomUUID();
+
     const journeyItemsData = JOURNEY_ACTIONS.map((action, index) => ({
-      instanceId: `seed-${id ?? name}-${action.id}`,
+      id: randomUUID(),
+      instanceId: `seed-${candidateId}-${action.id}`,
       actionId: action.id,
       stageId: action.stageId,
       shortTitle: action.shortTitle,
@@ -64,37 +149,112 @@ export async function POST(request: Request) {
       orderIndex: index,
     }));
 
-    const candidate = await prisma.$transaction(async (tx) => {
-      const created = await tx.candidate.create({
-        data: {
-          id,
-          name,
-          role,
-          mentor,
-          currentStageId,
-          riskLevel,
-          isAlumni,
-          enrolledDate,
-          notes: notes ?? null,
-          journeyItems: {
-            create: journeyItemsData,
-          },
-        },
-        include: {
-          journeyItems: {
-            orderBy: { orderIndex: 'asc' },
-          },
-        },
-      });
+    await sql.transaction([
+      sql`
+        INSERT INTO "Candidate" (
+          "id",
+          "name",
+          "role",
+          "mentor",
+          "currentStageId",
+          "riskLevel",
+          "isAlumni",
+          "optedOut",
+          "enrolledDate",
+          "notes",
+          "createdAt",
+          "updatedAt"
+        ) VALUES (
+          ${candidateId},
+          ${name},
+          ${role},
+          ${mentor},
+          ${currentStageId},
+          ${riskLevel},
+          ${isAlumni},
+          false,
+          ${enrolledDate},
+          ${notes ?? null},
+          NOW(),
+          NOW()
+        );
+      `,
+      ...journeyItemsData.map(
+        (ji) => sql`
+          INSERT INTO "JourneyItem" (
+            "id",
+            "candidateId",
+            "instanceId",
+            "actionId",
+            "stageId",
+            "shortTitle",
+            "title",
+            "status",
+            "date",
+            "comment",
+            "poc",
+            "duration",
+            "isCustom",
+            "orderIndex"
+          ) VALUES (
+            ${ji.id},
+            ${candidateId},
+            ${ji.instanceId},
+            ${ji.actionId},
+            ${ji.stageId},
+            ${ji.shortTitle},
+            ${ji.title},
+            ${ji.status},
+            ${ji.date},
+            ${ji.comment},
+            ${ji.poc},
+            ${ji.duration},
+            ${ji.isCustom},
+            ${ji.orderIndex}
+          );
+        `,
+      ),
+    ]);
 
-      return created;
-    });
+    const rows = await sql`
+      SELECT
+        c.id,
+        c.name,
+        c.role,
+        c.mentor,
+        c."currentStageId" AS "currentStageId",
+        c."riskLevel" AS "riskLevel",
+        c."isAlumni" AS "isAlumni",
+        c."optedOut" AS "optedOut",
+        c."enrolledDate" AS "enrolledDate",
+        c.notes AS "notes",
+        ji.id AS "journeyItemId",
+        ji."candidateId" AS "journeyCandidateId",
+        ji."instanceId" AS "journeyInstanceId",
+        ji."actionId" AS "journeyActionId",
+        ji."stageId" AS "journeyStageId",
+        ji."shortTitle" AS "journeyShortTitle",
+        ji.title AS "journeyTitle",
+        ji.status AS "journeyStatus",
+        ji.date AS "journeyDate",
+        ji.comment AS "journeyComment",
+        ji.poc AS "journeyPoc",
+        ji.duration AS "journeyDuration",
+        ji."isCustom" AS "journeyIsCustom",
+        ji."orderIndex" AS "journeyOrderIndex"
+      FROM "Candidate" c
+      LEFT JOIN "JourneyItem" ji
+        ON ji."candidateId" = c.id
+      WHERE c.id = ${candidateId}
+      ORDER BY ji."orderIndex" ASC
+    `;
 
+    const [candidate] = groupCandidatesWithJourneyItems(rows);
     return NextResponse.json(candidate, { status: 201 });
   } catch (error: unknown) {
     console.error('Error creating candidate', error);
 
-    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'P2002') {
+    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === '23505') {
       return NextResponse.json(
         { error: 'Candidate with this id already exists' },
         { status: 409 },

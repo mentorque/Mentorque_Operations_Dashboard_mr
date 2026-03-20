@@ -73,6 +73,11 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const [newMentorName, setNewMentorName] = useState("");
 
   const [journey, setJourney] = useState<SessionItem[]>([]);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const journeyRef = useRef<SessionItem[]>([]);
+  useEffect(() => {
+    journeyRef.current = journey;
+  }, [journey]);
   const [reorderMode, setReorderMode]   = useState(false);
   const [editingId, setEditingId]       = useState<string | null>(null);
   const [, setInsertingAt]               = useState<number | null>(null);
@@ -94,9 +99,11 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
     if (!id) {
       setLoaded(true);
       setCandidate(null);
+      setJourneyLoading(false);
       return;
     }
     async function load() {
+      setJourneyLoading(true);
       try {
         const res = await fetch(`/api/candidates/${id}`);
         if (!res.ok) throw new Error("not found");
@@ -179,6 +186,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         const found = base ?? custom ?? null;
         if (!found) {
           setCandidate(null);
+          setJourneyLoading(false);
           setLoaded(true);
           return;
         }
@@ -190,6 +198,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         setCandidateNotes(notes);
         setNotesInput(notes);
       }
+      setJourneyLoading(false);
       setMentorCatalog(loadMentorCatalog());
       upsertStageTracking(id, "onboarding");
       setStageAge(getStageAgeDays(id));
@@ -249,6 +258,9 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       // Skip if currently editing
       if (editingId !== null) return;
 
+      const shouldShowJourneySkeleton = journeyRef.current.length === 0;
+      if (shouldShowJourneySkeleton) setJourneyLoading(true);
+
       try {
         isPollingUpdate.current = true;
         const res = await fetch(`/api/candidates/${candidate.id}/journey`);
@@ -274,11 +286,12 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       } catch {
         // silent
       } finally {
+        if (shouldShowJourneySkeleton) setJourneyLoading(false);
         setTimeout(() => {
           isPollingUpdate.current = false;
         }, 100);
       }
-    }, 5000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [candidate, editingId]);
@@ -297,8 +310,15 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         <Link href="/candidates" className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition">
           ← All candidates
         </Link>
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center">
-          <p className="text-sm text-slate-400">Loading…</p>
+        <div className="rounded-2xl border border-slate-700 bg-slate-900 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700 flex-wrap">
+            <div className="space-y-2">
+              <div className="h-4 w-20 rounded bg-slate-800 animate-pulse" />
+              <div className="h-3 w-32 rounded bg-slate-800 animate-pulse" />
+            </div>
+            <div className="h-8 w-48 rounded bg-slate-800 animate-pulse" />
+          </div>
+          <JourneyBoardSkeleton />
         </div>
       </div>
     );
@@ -346,6 +366,8 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const hasBlockerAhead = !!immediateBlocker && immediateBlocker !== currentAct;
 
   async function refreshFromDB() {
+    const shouldShowJourneySkeleton = journeyRef.current.length === 0;
+    if (shouldShowJourneySkeleton) setJourneyLoading(true);
     try {
       const res = await fetch(`/api/candidates/${id}`)
       if (!res.ok) return
@@ -369,6 +391,9 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         setTimeout(() => { isPollingUpdate.current = false; }, 100);
       }
     } catch { /* silent */ }
+    finally {
+      if (shouldShowJourneySkeleton) setJourneyLoading(false);
+    }
   }
 
   // Reactive: use the same live pace logic as the dashboard/cards
@@ -984,31 +1009,39 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         {/* ── Kanban view (default) ─────────────────────────────────────── */}
         {!reorderMode && (
           journeyView === "board" ? (
-            <KanbanJourney
-              journey={journey}
-              visibleJourney={visibleJourney}
-              editingId={editingId}
-              candidate={candidate}
-              onCycleStatus={(item) => cycleStatus(item)}
-              onStartEdit={(iid) => { setEditingId((p) => p === iid ? null : iid); setInsertingAt(null); }}
-              onSave={(iid, updates) => { updateItem(iid, updates); setEditingId(null); }}
-              onCancelEdit={() => setEditingId(null)}
-              onDelete={(iid) => deleteItem(iid)}
-              onInsert={(idx, data) => insertAt(idx, data)}
-            />
+              journeyLoading ? (
+                <JourneyBoardSkeleton />
+              ) : (
+                <KanbanJourney
+                  journey={journey}
+                  visibleJourney={visibleJourney}
+                  editingId={editingId}
+                  candidate={candidate}
+                  onCycleStatus={(item) => cycleStatus(item)}
+                  onStartEdit={(iid) => { setEditingId((p) => p === iid ? null : iid); setInsertingAt(null); }}
+                  onSave={(iid, updates) => { updateItem(iid, updates); setEditingId(null); }}
+                  onCancelEdit={() => setEditingId(null)}
+                  onDelete={(iid) => deleteItem(iid)}
+                  onInsert={(idx, data) => insertAt(idx, data)}
+                />
+              )
           ) : (
-            <StackedJourney
-              journey={journey}
-              visibleJourney={visibleJourney}
-              editingId={editingId}
-              candidate={candidate}
-              onCycleStatus={(item) => cycleStatus(item)}
-              onStartEdit={(iid) => { setEditingId((p) => p === iid ? null : iid); setInsertingAt(null); }}
-              onSave={(iid, updates) => { updateItem(iid, updates); setEditingId(null); }}
-              onCancelEdit={() => setEditingId(null)}
-              onDelete={(iid) => deleteItem(iid)}
-              onInsert={(idx, data) => insertAt(idx, data)}
-            />
+            journeyLoading ? (
+              <JourneyBoardSkeleton />
+            ) : (
+              <StackedJourney
+                journey={journey}
+                visibleJourney={visibleJourney}
+                editingId={editingId}
+                candidate={candidate}
+                onCycleStatus={(item) => cycleStatus(item)}
+                onStartEdit={(iid) => { setEditingId((p) => p === iid ? null : iid); setInsertingAt(null); }}
+                onSave={(iid, updates) => { updateItem(iid, updates); setEditingId(null); }}
+                onCancelEdit={() => setEditingId(null)}
+                onDelete={(iid) => deleteItem(iid)}
+                onInsert={(idx, data) => insertAt(idx, data)}
+              />
+            )
           )
         )}
 
@@ -1017,24 +1050,30 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={journey.map((i) => i.instanceId)} strategy={verticalListSortingStrategy}>
               <div>
-                {visibleJourney.map((item) => (
-                  <SessionRow
-                    key={item.instanceId}
-                    item={item}
-                    reorderMode={reorderMode}
-                    isEditing={false}
-                    templateOpen={false}
-                    candidate={candidate}
-                    onCycleStatus={() => cycleStatus(item)}
-                    onStartEdit={() => {}}
-                    onSave={() => {}}
-                    onCancelEdit={() => {}}
-                    onDelete={() => deleteItem(item.instanceId)}
-                    onToggleTemplate={() => {}}
-                  />
-                ))}
-                {visibleJourney.length === 0 && (
-                  <p className="py-10 text-center text-sm text-slate-600">No visible steps.</p>
+                {journeyLoading ? (
+                  <JourneyListSkeleton />
+                ) : (
+                  <>
+                    {visibleJourney.map((item) => (
+                      <SessionRow
+                        key={item.instanceId}
+                        item={item}
+                        reorderMode={reorderMode}
+                        isEditing={false}
+                        templateOpen={false}
+                        candidate={candidate}
+                        onCycleStatus={() => cycleStatus(item)}
+                        onStartEdit={() => {}}
+                        onSave={() => {}}
+                        onCancelEdit={() => {}}
+                        onDelete={() => deleteItem(item.instanceId)}
+                        onToggleTemplate={() => {}}
+                      />
+                    ))}
+                    {visibleJourney.length === 0 && (
+                      <p className="py-10 text-center text-sm text-slate-600">No visible steps.</p>
+                    )}
+                  </>
                 )}
               </div>
             </SortableContext>
@@ -1042,6 +1081,39 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         )}
       </div>
 
+    </div>
+  );
+}
+
+function JourneyBoardSkeleton() {
+  return (
+    <div className="flex min-h-[200px] gap-3 overflow-x-auto p-4 pb-5 transition-all duration-200">
+      {Array.from({ length: 4 }).map((_, colIdx) => (
+        <div key={colIdx} className="w-64 flex-shrink-0 space-y-2">
+          <div className="h-3 w-24 rounded bg-slate-800 animate-pulse" />
+          {Array.from({ length: 3 }).map((__, rowIdx) => (
+            <div
+              // eslint-disable-next-line react/no-array-index-key
+              key={rowIdx}
+              className="h-14 rounded border border-slate-800 bg-slate-800/50 animate-pulse"
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function JourneyListSkeleton() {
+  return (
+    <div className="p-4 space-y-3">
+      {Array.from({ length: 6 }).map((_, idx) => (
+        <div
+          // eslint-disable-next-line react/no-array-index-key
+          key={idx}
+          className="h-14 rounded border border-slate-800 bg-slate-800/50 animate-pulse"
+        />
+      ))}
     </div>
   );
 }

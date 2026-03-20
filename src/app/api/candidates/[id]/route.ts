@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
 
 interface RouteParams {
   params: {
@@ -7,18 +7,34 @@ interface RouteParams {
   };
 }
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
+}
+
+const sql = neon(process.env.DATABASE_URL);
+
 export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = params;
 
   try {
-    const candidate = await prisma.candidate.findUnique({
-      where: { id },
-      include: {
-        journeyItems: {
-          orderBy: { orderIndex: 'asc' },
-        },
-      },
-    });
+    const [candidate] = await sql`
+      SELECT
+        "id",
+        "name",
+        "role",
+        "mentor",
+        "currentStageId",
+        "riskLevel",
+        "isAlumni",
+        "optedOut",
+        "enrolledDate",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      FROM "Candidate"
+      WHERE "id" = ${id}
+      LIMIT 1
+    `;
 
     if (!candidate) {
       return NextResponse.json(
@@ -27,7 +43,28 @@ export async function GET(_request: Request, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json(candidate);
+    const journeyItems = await sql`
+      SELECT
+        "id",
+        "candidateId",
+        "instanceId",
+        "actionId",
+        "stageId",
+        "shortTitle",
+        "title",
+        "status",
+        "date",
+        "comment",
+        "poc",
+        "duration",
+        "isCustom",
+        "orderIndex"
+      FROM "JourneyItem"
+      WHERE "candidateId" = ${id}
+      ORDER BY "orderIndex" ASC
+    `;
+
+    return NextResponse.json({ ...candidate, journeyItems });
   } catch (error) {
     console.error('Error fetching candidate', error);
     return NextResponse.json(
@@ -57,26 +94,66 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       );
     }
 
-    const updated = await prisma.candidate.update({
-      where: { id },
-      data,
-      include: {
-        journeyItems: {
-          orderBy: { orderIndex: 'asc' },
-        },
-      },
-    });
+    const hasMentor = mentor !== undefined;
+    const hasNotes = notes !== undefined;
+    const hasRiskLevel = riskLevel !== undefined;
+    const hasCurrentStageId = currentStageId !== undefined;
 
-    return NextResponse.json(updated);
-  } catch (error: unknown) {
-    console.error('Error updating candidate', error);
+    const [updated] = await sql`
+      UPDATE "Candidate"
+      SET
+        "mentor" = CASE WHEN ${hasMentor} THEN ${mentor} ELSE "mentor" END,
+        "notes" = CASE WHEN ${hasNotes} THEN ${notes} ELSE "notes" END,
+        "riskLevel" = CASE WHEN ${hasRiskLevel} THEN ${riskLevel} ELSE "riskLevel" END,
+        "currentStageId" = CASE WHEN ${hasCurrentStageId} THEN ${currentStageId} ELSE "currentStageId" END,
+        "updatedAt" = NOW()
+      WHERE "id" = ${id}
+      RETURNING
+        "id",
+        "name",
+        "role",
+        "mentor",
+        "currentStageId",
+        "riskLevel",
+        "isAlumni",
+        "optedOut",
+        "enrolledDate",
+        "notes",
+        "createdAt",
+        "updatedAt"
+    `;
 
-    if (typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'P2025') {
+    if (!updated) {
       return NextResponse.json(
         { error: 'Candidate not found' },
         { status: 404 },
       );
     }
+
+    const journeyItems = await sql`
+      SELECT
+        "id",
+        "candidateId",
+        "instanceId",
+        "actionId",
+        "stageId",
+        "shortTitle",
+        "title",
+        "status",
+        "date",
+        "comment",
+        "poc",
+        "duration",
+        "isCustom",
+        "orderIndex"
+      FROM "JourneyItem"
+      WHERE "candidateId" = ${id}
+      ORDER BY "orderIndex" ASC
+    `;
+
+    return NextResponse.json({ ...updated, journeyItems });
+  } catch (error: unknown) {
+    console.error('Error updating candidate', error);
 
     return NextResponse.json(
       { error: 'Failed to update candidate' },
@@ -91,25 +168,21 @@ export async function DELETE(
 ) {
   try {
     // Delete related records first due to foreign key constraints
-    await prisma.journeyItem.deleteMany({
-      where: { candidateId: params.id }
-    });
-    await prisma.candidateAction.deleteMany({
-      where: { candidateId: params.id }
-    });
-    await prisma.calendarEvent.deleteMany({
-      where: { candidateId: params.id }
-    });
-    await prisma.mentorOverride.deleteMany({
-      where: { candidateId: params.id }
-    });
-    await prisma.candidateNote.deleteMany({
-      where: { candidateId: params.id }
-    });
-    // Now delete the candidate
-    await prisma.candidate.delete({
-      where: { id: params.id }
-    });
+    const results = await sql.transaction([
+      sql`DELETE FROM "JourneyItem" WHERE "candidateId" = ${params.id}`,
+      sql`DELETE FROM "CandidateAction" WHERE "candidateId" = ${params.id}`,
+      sql`DELETE FROM "CalendarEvent" WHERE "candidateId" = ${params.id}`,
+      sql`DELETE FROM "MentorOverride" WHERE "candidateId" = ${params.id}`,
+      sql`DELETE FROM "CandidateNote" WHERE "candidateId" = ${params.id}`,
+      sql`DELETE FROM "Candidate" WHERE "id" = ${params.id} RETURNING "id"`,
+    ]);
+
+    const deletedCandidateRows = results?.[results.length - 1] as any;
+    const deletedCandidate = Array.isArray(deletedCandidateRows) ? deletedCandidateRows[0] : undefined;
+    if (!deletedCandidate) {
+      throw new Error('Candidate not found');
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Delete candidate error:', error);

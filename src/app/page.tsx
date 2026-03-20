@@ -137,7 +137,7 @@ export default function HomePage() {
       } catch { /* silent */ }
     }
 
-    const interval = setInterval(refresh, 5000) // every 5 seconds
+    const interval = setInterval(refresh, 30000) // every 30 seconds
     return () => clearInterval(interval)
   }, [mounted])
 
