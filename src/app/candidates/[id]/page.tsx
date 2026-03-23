@@ -306,7 +306,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
 
   if (!loaded) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-6xl space-y-4">
         <Link href="/candidates" className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition">
           ← All candidates
         </Link>
@@ -326,7 +326,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
 
   if (!candidate) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-6xl space-y-4">
         <Link href="/candidates" className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition">
           ← All candidates
         </Link>
@@ -564,7 +564,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-6xl space-y-4">
 
       {/* Back */}
       <Link
