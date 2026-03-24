@@ -4,12 +4,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CANDIDATES, STAGES, STAGE_STYLES } from "@/lib/data";
-import { loadCustomCandidates, loadOptedOutCandidates, reinstateCandidate } from "@/lib/ops-store";
+import { STAGES, STAGE_STYLES } from "@/lib/data";
+import { reinstateCandidate } from "@/lib/ops-store";
 import { GradientBlinds } from "@/components/ui/gradient-blinds";
 
 export default function OptedOutPage() {
   const [optedOutCandidates, setOptedOutCandidates] = useState<any[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -17,12 +18,10 @@ export default function OptedOutPage() {
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       setOptedOutCandidates(Array.isArray(data) ? data : []);
+      setErrorMessage(null);
     } catch {
-      // fallback to localStorage
-      const ids = loadOptedOutCandidates();
-      const all = [...CANDIDATES, ...loadCustomCandidates()];
-      const opted = all.filter((c) => ids.includes(c.id));
-      setOptedOutCandidates(opted);
+      setOptedOutCandidates([]);
+      setErrorMessage("Failed to load opted out candidates from API.");
     }
   }, []);
 
@@ -106,6 +105,12 @@ export default function OptedOutPage() {
           <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
           <p className="text-sm font-semibold text-amber-300">Opted out candidates ({optedOutList.length})</p>
         </div>
+
+        {errorMessage && (
+          <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            {errorMessage}
+          </div>
+        )}
 
         {!hasOptedOut ? (
           <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-400">

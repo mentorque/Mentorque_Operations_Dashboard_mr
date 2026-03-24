@@ -4,14 +4,12 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { CANDIDATES, STAGES, STAGE_STYLES, JOURNEY_ACTIONS } from "@/lib/data";
+import { STAGES, STAGE_STYLES, JOURNEY_ACTIONS } from "@/lib/data";
 import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 import {
-  loadCustomCandidates,
   loadDeletedCandidates,
   loadOptedOutCandidates,
   getStageAgeDays,
-  getPaceBucket,
   upsertStageTracking,
   computePacingAlertFromItems,
   type PacingAlert,
@@ -43,11 +41,9 @@ function getBatchLabel(enrolledDate: string): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CandidatesPage() {
-  const [customCandidates, setCustomCandidates] = useState<Candidate[]>([]);
   const [deletedCandidates, setDeletedCandidates] = useState<string[]>([]);
   const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
 
-  const [paceBucketMap, setPaceBucketMap]       = useState<Record<string, string>>({});
   const [query,       setQuery]   = useState("");
   const [stageFilter, setStage]   = useState("all");
   const [riskFilter,  setRisk]    = useState("all");
@@ -58,6 +54,7 @@ export default function CandidatesPage() {
   const [journeyVersion, setJourneyVersion] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [allCandidatesFromApi, setAllCandidatesFromApi] = useState<Candidate[]>([]);
+  const [apiLoaded, setApiLoaded] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -74,6 +71,7 @@ export default function CandidatesPage() {
           riskLevel: RiskLevel;
           isAlumni: boolean;
           enrolledDate: string;
+          paceStatus?: "at-risk" | "watch" | "on-track";
           journeyItems?: Array<{
             actionId: number;
             status: ActionStatus;
@@ -101,6 +99,7 @@ export default function CandidatesPage() {
             riskLevel: c.riskLevel,
             isAlumni: c.isAlumni,
             enrolledDate: c.enrolledDate,
+            paceStatus: c.paceStatus,
             actions: (c.journeyItems ?? []).map((ji) => ({
               actionId: ji.actionId,
               status: ji.status,
@@ -112,8 +111,10 @@ export default function CandidatesPage() {
           setAllCandidatesFromApi(mapped);
         }
       } catch (err) {
-        console.error('[DB] API failed, falling back to localStorage:', err)
-        setCustomCandidates(loadCustomCandidates());
+        console.error('[DB] API failed:', err)
+        setAllCandidatesFromApi([]);
+      } finally {
+        setApiLoaded(true);
       }
       setDeletedCandidates(loadDeletedCandidates());
       setOptedOutCandidates(loadOptedOutCandidates());
@@ -149,14 +150,9 @@ export default function CandidatesPage() {
   }, [mounted])
 
   const allCandidates = useMemo(() => {
-    if (allCandidatesFromApi.length > 0) {
-      const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
-      return allCandidatesFromApi.filter((c) => !c.optedOut && !excluded.has(c.id));
-    }
-    const candidates = [...CANDIDATES, ...customCandidates];
     const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
-    return candidates.filter((c) => !excluded.has(c.id));
-  }, [allCandidatesFromApi, customCandidates, deletedCandidates, optedOutCandidates]);
+    return allCandidatesFromApi.filter((c) => !c.optedOut && !excluded.has(c.id));
+  }, [allCandidatesFromApi, deletedCandidates, optedOutCandidates]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveDataMap = useMemo(() => {
@@ -196,25 +192,6 @@ export default function CandidatesPage() {
       hasScheduledSession(c.id);
     }
   }, [active]);
-
-  // Derive week-based pace bucket ("on-track" | "watch" | "at-risk") per candidate
-  // using the same logic as the detail page (computePacingAlertFromItems + getPaceBucket).
-  useEffect(() => {
-    if (!mounted) return;
-    const map: Record<string, string> = {};
-    for (const c of allCandidates) {
-      const journey = loadJourney(c);
-      const items = journey.map((i) => ({
-        actionId: i.actionId,
-        status: i.status,
-        date: i.date,
-        shortTitle: i.shortTitle,
-      }));
-      const pacing = computePacingAlertFromItems(c, items);
-      map[c.id] = getPaceBucket(pacing);
-    }
-    setPaceBucketMap(map);
-  }, [allCandidates, mounted, journeyVersion]);
 
   useEffect(() => {
     const refresh = () => {
@@ -268,7 +245,7 @@ export default function CandidatesPage() {
       .filter((c) => !c.isAlumni)
       .map((c) => {
         const pacing = pacingMap.get(c.id)!;
-        return { candidate: c, pacing, stage: getPaceBucket(pacing) };
+        return { candidate: c, pacing, stage: c.paceStatus ?? "on-track" };
       })
       .sort((a, b) => {
         const order = { "at-risk": 0, watch: 1, "on-track": 2 } as const;
@@ -308,6 +285,14 @@ export default function CandidatesPage() {
         />
       </div>
       <div className="relative z-10 space-y-5">
+      {!apiLoaded && (
+        <div className="magic-bento-card rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-400">
+          Loading candidates...
+        </div>
+      )}
+
+      {apiLoaded && (
+      <>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -472,7 +457,7 @@ export default function CandidatesPage() {
             const curAct = live?.currentAction ?? null;
             const pct    = live?.progress ?? 0;
             const pacing = pacingMap.get(c.id);
-            const bucket = mounted ? paceBucketMap[c.id] : undefined;
+            const bucket = mounted ? c.paceStatus : undefined;
             const safety: SafetyLevel = !mounted
               ? "safe"
               : bucket === "on-track" ? "safe"
@@ -610,7 +595,7 @@ export default function CandidatesPage() {
                     {cols.map((c) => {
                       const curAct = liveDataMap.get(c.id)?.currentAction ?? null;
                       const pacing = pacingMap.get(c.id);
-                      const bucket = mounted ? paceBucketMap[c.id] : undefined;
+                      const bucket = mounted ? c.paceStatus : undefined;
                       const safety: SafetyLevel = !mounted
                         ? "safe"
                         : bucket === "on-track" ? "safe"
@@ -673,6 +658,8 @@ export default function CandidatesPage() {
       {/* Alumni grid */}
       {alumniOnly && filtered.filter((c) => c.isAlumni).length === 0 && (
         <p className="py-12 text-center text-slate-500 text-sm">No alumni found.</p>
+      )}
+      </>
       )}
       </div>
     </div>

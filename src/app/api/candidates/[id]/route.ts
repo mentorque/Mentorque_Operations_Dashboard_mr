@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
+import type { Candidate } from '@/lib/data';
+import { computePacingAlertFromItems, getPaceBucket } from '@/lib/ops-store';
 
 interface RouteParams {
   params: {
@@ -15,6 +17,45 @@ const sql = neon(process.env.DATABASE_URL);
 
 interface DeletedCandidateRow {
   id: string;
+}
+
+function computePaceStatus(candidate: {
+  id: string;
+  name: string;
+  role: string;
+  mentor: string;
+  currentStageId: string;
+  riskLevel: string;
+  isAlumni: boolean;
+  optedOut?: boolean;
+  enrolledDate: string;
+  notes?: string | null;
+}, journeyItems: Array<{
+  actionId?: number | null;
+  status: string;
+  date?: string | null;
+  shortTitle?: string | null;
+}>): 'at-risk' | 'watch' | 'on-track' {
+  const paceInput: Candidate = {
+    id: candidate.id,
+    name: candidate.name,
+    role: candidate.role,
+    mentor: candidate.mentor,
+    currentStageId: candidate.currentStageId as Candidate['currentStageId'],
+    riskLevel: candidate.riskLevel as Candidate['riskLevel'],
+    isAlumni: candidate.isAlumni,
+    optedOut: candidate.optedOut,
+    enrolledDate: candidate.enrolledDate,
+    actions: [],
+    notes: candidate.notes ?? undefined,
+  };
+  const paceItems = journeyItems.map((item) => ({
+    actionId: item.actionId ?? undefined,
+    status: item.status,
+    date: item.date ?? undefined,
+    shortTitle: item.shortTitle ?? undefined,
+  }));
+  return getPaceBucket(computePacingAlertFromItems(paceInput, paceItems));
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
@@ -68,7 +109,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
       ORDER BY "orderIndex" ASC
     `;
 
-    return NextResponse.json({ ...candidate, journeyItems });
+    const paceStatus = computePaceStatus(candidate, journeyItems);
+    return NextResponse.json({ ...candidate, paceStatus, journeyItems });
   } catch (error) {
     console.error('Error fetching candidate', error);
     return NextResponse.json(
@@ -155,7 +197,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       ORDER BY "orderIndex" ASC
     `;
 
-    return NextResponse.json({ ...updated, journeyItems });
+    const paceStatus = computePaceStatus(updated, journeyItems);
+    return NextResponse.json({ ...updated, paceStatus, journeyItems });
   } catch (error: unknown) {
     console.error('Error updating candidate', error);
 

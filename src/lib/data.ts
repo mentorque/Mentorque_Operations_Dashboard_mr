@@ -45,6 +45,7 @@ export interface Candidate {
   riskLevel: RiskLevel;
   isAlumni: boolean;
   optedOut?: boolean;
+  paceStatus?: "at-risk" | "watch" | "on-track";
   enrolledDate: string;
   actions: CandidateAction[];
   notes?: string;

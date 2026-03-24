@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { randomUUID } from 'crypto';
+import type { Candidate } from '@/lib/data';
 import { JOURNEY_ACTIONS } from '@/lib/data';
+import { computePacingAlertFromItems, getPaceBucket } from '@/lib/ops-store';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set');
@@ -64,11 +66,12 @@ interface CandidateResponse {
   optedOut: boolean;
   enrolledDate: string;
   notes: string | null;
+  paceStatus: 'at-risk' | 'watch' | 'on-track';
   journeyItems: JourneyItemRow[];
 }
 
 function groupCandidatesWithJourneyItems(rows: CandidateJourneyRow[]) {
-  const map = new Map<string, CandidateResponse>();
+  const map = new Map<string, Omit<CandidateResponse, 'paceStatus'>>();
 
   for (const row of rows) {
     let candidate = map.get(row.id);
@@ -112,6 +115,34 @@ function groupCandidatesWithJourneyItems(rows: CandidateJourneyRow[]) {
   return [...map.values()];
 }
 
+function withPaceStatus(
+  candidates: Array<Omit<CandidateResponse, 'paceStatus'>>,
+): CandidateResponse[] {
+  return candidates.map((candidate) => {
+    const paceInput: Candidate = {
+      id: candidate.id,
+      name: candidate.name,
+      role: candidate.role,
+      mentor: candidate.mentor,
+      currentStageId: candidate.currentStageId as Candidate['currentStageId'],
+      riskLevel: candidate.riskLevel as Candidate['riskLevel'],
+      isAlumni: candidate.isAlumni,
+      optedOut: candidate.optedOut,
+      enrolledDate: candidate.enrolledDate,
+      actions: [],
+      notes: candidate.notes ?? undefined,
+    };
+    const paceItems = candidate.journeyItems.map((item) => ({
+      actionId: item.actionId ?? undefined,
+      status: item.status,
+      date: item.date ?? undefined,
+      shortTitle: item.shortTitle,
+    }));
+    const paceStatus = getPaceBucket(computePacingAlertFromItems(paceInput, paceItems));
+    return { ...candidate, paceStatus };
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -150,7 +181,7 @@ export async function GET(req: NextRequest) {
       ORDER BY c.id ASC, ji."orderIndex" ASC
     ` as CandidateJourneyRow[];
 
-    const candidates = groupCandidatesWithJourneyItems(rows);
+    const candidates = withPaceStatus(groupCandidatesWithJourneyItems(rows));
 
     return NextResponse.json(candidates, {
       headers: {

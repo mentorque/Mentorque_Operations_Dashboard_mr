@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CANDIDATES, STAGES, STAGE_STYLES, JOURNEY_ACTIONS } from "@/lib/data";
+import { STAGES, STAGE_STYLES, JOURNEY_ACTIONS } from "@/lib/data";
 import type { ActionStatus, Candidate, RiskLevel, StageId } from "@/lib/data";
 import { GradientBlinds } from "@/components/ui/gradient-blinds";
 
@@ -12,8 +12,6 @@ import {
   addMentorName,
   createCandidate,
   getStageAgeDays,
-  getPaceBucket,
-  loadCustomCandidates,
   loadDeletedCandidates,
   loadMentorCatalog,
   loadMentorOverrides,
@@ -33,7 +31,6 @@ type SafetyLevel = "safe" | "watch" | "at-risk";
 type PaceStage = "at-risk" | "watch" | "on-track";
 
 export default function HomePage() {
-  const [customCandidates, setCustomCandidates] = useState<Candidate[]>([]);
   const [mentorOverrides, setMentorOverrides] = useState<Record<string, string>>({});
   const [deletedCandidates, setDeletedCandidates] = useState<string[]>([]);
   const [optedOutCandidates, setOptedOutCandidates] = useState<string[]>([]);
@@ -56,6 +53,7 @@ export default function HomePage() {
   const [addedMentorName, setAddedMentorName] = useState("");
   const [mounted, setMounted] = useState(false);
   const [apiCandidates, setApiCandidates] = useState<Candidate[]>([]);
+  const [apiLoaded, setApiLoaded] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -72,6 +70,7 @@ export default function HomePage() {
           riskLevel: RiskLevel;
           isAlumni: boolean;
           enrolledDate: string;
+          paceStatus?: "at-risk" | "watch" | "on-track";
           journeyItems?: Array<{
             actionId: number;
             status: ActionStatus;
@@ -81,8 +80,8 @@ export default function HomePage() {
           notes?: string;
         }>;
         console.log('[DB] Candidates received:', data.length, data)
-        if (!Array.isArray(data) || data.length === 0) {
-          throw new Error('API returned empty data')
+        if (!Array.isArray(data)) {
+          throw new Error('API returned invalid data')
         }
         const mapped = data.map((c) => ({
           id: c.id,
@@ -93,6 +92,7 @@ export default function HomePage() {
           riskLevel: c.riskLevel,
           isAlumni: c.isAlumni,
           enrolledDate: c.enrolledDate,
+          paceStatus: c.paceStatus,
           actions: (c.journeyItems ?? []).map((ji) => ({
             actionId: ji.actionId,
             status: ji.status,
@@ -103,8 +103,10 @@ export default function HomePage() {
         }));
         setApiCandidates(mapped);
       } catch (err) {
-        console.error('[DB] API failed, falling back to localStorage:', err)
-        setCustomCandidates(loadCustomCandidates());
+        console.error('[DB] API failed:', err)
+        setApiCandidates([]);
+      } finally {
+        setApiLoaded(true);
       }
       setMentorOverrides(loadMentorOverrides());
       setDeletedCandidates(loadDeletedCandidates());
@@ -143,21 +145,13 @@ export default function HomePage() {
 
   const allCandidates = useMemo(() => {
     const excluded = new Set<string>([...deletedCandidates, ...optedOutCandidates]);
-    if (apiCandidates.length > 0) {
-      return apiCandidates
-        .filter((c) => !c.optedOut && !excluded.has(c.id))
-        .map((c) => ({
-          ...c,
-          mentor: mentorOverrides[c.id] ?? c.mentor,
-        }));
-    }
-    return [...CANDIDATES, ...customCandidates]
+    return apiCandidates
       .filter((c) => !excluded.has(c.id))
       .map((c) => ({
         ...c,
         mentor: mentorOverrides[c.id] ?? c.mentor,
       }));
-  }, [apiCandidates, customCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
+  }, [apiCandidates, mentorOverrides, deletedCandidates, optedOutCandidates]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveDataMap = useMemo(() => {
@@ -232,7 +226,7 @@ export default function HomePage() {
           };
         });
         const pacing = computePacingAlertFromItems(c, items);
-        return { candidate: c, pacing, stage: getPaceBucket(pacing) };
+        return { candidate: c, pacing, stage: c.paceStatus ?? "on-track" };
       })
       .sort((a, b) => {
         const order = { "at-risk": 0, watch: 1, "on-track": 2 } as const;
@@ -336,7 +330,6 @@ export default function HomePage() {
         } catch (err) {
           console.error("[CreateCandidate] API request failed:", err);
         } finally {
-          setCustomCandidates(loadCustomCandidates());
           setMentorCatalog(loadMentorCatalog());
         }
       })();
@@ -388,6 +381,14 @@ export default function HomePage() {
         />
       </div>
       <div className="relative z-10 space-y-6">
+      {!apiLoaded && (
+        <section className="magic-bento-card rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-400">
+          Loading candidates...
+        </section>
+      )}
+
+      {apiLoaded && (
+      <>
       <div className="flex items-center justify-end flex-wrap gap-3">
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -737,6 +738,8 @@ export default function HomePage() {
             </div>
           </div>
         </Modal>
+      )}
+      </>
       )}
       </div>
     </div>

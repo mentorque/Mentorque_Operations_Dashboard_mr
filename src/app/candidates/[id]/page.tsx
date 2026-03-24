@@ -22,7 +22,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  CANDIDATES,
   STAGES,
   STAGE_STYLES,
   MESSAGE_TEMPLATES,
@@ -40,8 +39,6 @@ import {
 import {
   addMentorName,
   computePacingAlertFromItems,
-  getPaceBucket,
-  loadCustomCandidates,
   loadMentorCatalog,
   loadMentorOverrides,
   loadCandidateNotes,
@@ -51,7 +48,6 @@ import {
   upsertStageTracking,
   saveCalendarEvent,
   removeCalendarEvent,
-  saveCustomCandidates,
   deleteCandidate,
   optOutCandidate,
 } from "@/lib/ops-store";
@@ -91,6 +87,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
   const [mounted, setMounted] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showOptOutConfirm, setShowOptOutConfirm] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => { setMounted(true); }, []);
@@ -100,10 +97,12 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
       setLoaded(true);
       setCandidate(null);
       setJourneyLoading(false);
+      setLoadError("Candidate not found");
       return;
     }
     async function load() {
       setJourneyLoading(true);
+      setLoadError(null);
       try {
         const res = await fetch(`/api/candidates/${id}`);
         if (!res.ok) throw new Error("not found");
@@ -116,6 +115,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           riskLevel: RiskLevel;
           isAlumni: boolean;
           enrolledDate: string;
+          paceStatus?: "at-risk" | "watch" | "on-track";
           journeyItems?: Array<{
             instanceId: string;
             actionId?: number;
@@ -140,6 +140,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           riskLevel: data.riskLevel,
           isAlumni: data.isAlumni,
           enrolledDate: data.enrolledDate,
+          paceStatus: data.paceStatus,
           actions: (data.journeyItems ?? []).map((ji) => ({
             actionId: ji.actionId ?? 0,
             status: ji.status,
@@ -148,6 +149,9 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           })),
           notes: data.notes ?? undefined,
         };
+        if (!candidateData?.id) {
+          throw new Error("not found");
+        }
         setCandidate(candidateData);
         setMentorInput(candidateData.mentor === "TBD" ? "" : candidateData.mentor);
         const items = (data.journeyItems ?? []).map((ji) => ({
@@ -180,23 +184,11 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         setCandidateNotes(savedNotes);
         setNotesInput(savedNotes);
       } catch {
-        const overrides = loadMentorOverrides();
-        const base = CANDIDATES.find((c) => c.id === id);
-        const custom = loadCustomCandidates().find((c) => c.id === id);
-        const found = base ?? custom ?? null;
-        if (!found) {
-          setCandidate(null);
-          setJourneyLoading(false);
-          setLoaded(true);
-          return;
-        }
-        const resolved = { ...found, mentor: overrides[found.id] ?? found.mentor };
-        setCandidate(resolved);
-        setMentorInput(resolved.mentor === "TBD" ? "" : resolved.mentor);
-        setJourney(loadJourney(resolved));
-        const notes = loadCandidateNotes(id) ?? "";
-        setCandidateNotes(notes);
-        setNotesInput(notes);
+        setCandidate(null);
+        setJourney([]);
+        setCandidateNotes("");
+        setNotesInput("");
+        setLoadError("Candidate not found");
       }
       setJourneyLoading(false);
       setMentorCatalog(loadMentorCatalog());
@@ -331,7 +323,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
           ← All candidates
         </Link>
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-          <p className="text-sm text-slate-300">Candidate not found.</p>
+          <p className="text-sm text-slate-300">{loadError ?? "Candidate not found."}</p>
         </div>
       </div>
     );
@@ -420,7 +412,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
         needsScheduling: false,
         paceBelowTarget: false,
       };
-  const paceBucket = mounted ? getPaceBucket(pacing) : "on-track";
+  const paceBucket = mounted ? (candidate.paceStatus ?? "on-track") : "on-track";
   const safetyLevel: SafetyLevel = paceBucket === "on-track" ? "safe" : paceBucket;
 
   const visibleJourney = hideDone ? journey.filter((i) => i.status !== "done") : journey;
@@ -456,13 +448,7 @@ export default function CandidateDetailPage({ params }: { params: { id: string }
 
   async function handleDeleteCandidate() {
     if (!candidate) return;
-    const fromSeed = CANDIDATES.some((c) => c.id === candidate.id);
-    if (fromSeed) {
-      deleteCandidate(candidate.id);
-    } else {
-      const custom = loadCustomCandidates().filter((c) => c.id !== candidate.id);
-      saveCustomCandidates(custom);
-    }
+    deleteCandidate(candidate.id);
     if (typeof window !== "undefined") {
       localStorage.removeItem(`mq-journey-v1-${candidate.id}`);
     }
