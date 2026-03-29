@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 
@@ -100,8 +101,10 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
       const actionId = item.actionId != null ? Number(item.actionId) : null;
 
+      const rowId = randomUUID();
       return sql`
         INSERT INTO "JourneyItem" (
+          "id",
           "candidateId",
           "instanceId",
           "actionId",
@@ -116,6 +119,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
           "isCustom",
           "orderIndex"
         ) VALUES (
+          ${rowId},
           ${candidateId},
           ${instanceId},
           ${actionId},
