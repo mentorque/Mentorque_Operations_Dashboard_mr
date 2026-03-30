@@ -83,25 +83,16 @@ export default function HomePage() {
         if (!Array.isArray(data)) {
           throw new Error('API returned invalid data')
         }
-        const mapped = data.map((c) => ({
-          id: c.id,
-          name: c.name,
-          role: c.role,
-          mentor: c.mentor,
-          currentStageId: c.currentStageId,
-          riskLevel: c.riskLevel,
-          isAlumni: c.isAlumni,
-          enrolledDate: c.enrolledDate,
+        setApiCandidates(data.map((c: any) => ({
+          ...c,
           paceStatus: c.paceStatus,
-          actions: (c.journeyItems ?? []).map((ji) => ({
+          actions: c.journeyItems?.map((ji: any) => ({
             actionId: ji.actionId,
             status: ji.status,
             date: ji.date ?? undefined,
             comment: ji.comment ?? undefined,
-          })),
-          notes: c.notes ?? undefined,
-        }));
-        setApiCandidates(mapped);
+          })) ?? c.actions ?? [],
+        })));
       } catch (err) {
         console.error('[DB] API failed:', err)
         setApiCandidates([]);
@@ -126,20 +117,21 @@ export default function HomePage() {
         if (!res.ok) return
         const data: Candidate[] = await res.json()
         if (Array.isArray(data) && data.length > 0) {
-          setApiCandidates(data.map((c) => ({
+          setApiCandidates(data.map((c: any) => ({
             ...c,
-            actions: (c as any).journeyItems?.map((ji: { actionId: number | null; status: string; date?: string | null; comment?: string | null }) => ({
+            paceStatus: c.paceStatus,
+            actions: c.journeyItems?.map((ji: any) => ({
               actionId: ji.actionId,
               status: ji.status,
               date: ji.date ?? undefined,
               comment: ji.comment ?? undefined,
-            })) ?? (c as any).actions ?? [],
+            })) ?? c.actions ?? [],
           })))
         }
       } catch { /* silent */ }
     }
 
-    const interval = setInterval(refresh, 30000) // every 30 seconds
+    const interval = setInterval(refresh, 10000) // every 10 seconds
     return () => clearInterval(interval)
   }, [mounted])
 

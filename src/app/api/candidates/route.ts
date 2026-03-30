@@ -9,7 +9,6 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set');
 }
 
-const sql = neon(process.env.DATABASE_URL);
 
 interface JourneyItemRow {
   id: string;
@@ -144,6 +143,7 @@ function withPaceStatus(
 }
 
 export async function GET(req: NextRequest) {
+  const sql = neon(process.env.DATABASE_URL!);
   try {
     const { searchParams } = new URL(req.url);
     const optedOut = searchParams.get('optedOut') === 'true';
@@ -183,11 +183,7 @@ export async function GET(req: NextRequest) {
 
     const candidates = withPaceStatus(groupCandidatesWithJourneyItems(rows));
 
-    return NextResponse.json(candidates, {
-      headers: {
-        'Cache-Control': 's-maxage=20, stale-while-revalidate=59',
-      },
-    });
+    return NextResponse.json(candidates); 
   } catch (error) {
     console.error('Error fetching candidates', error);
     return NextResponse.json(
@@ -198,6 +194,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(request: Request) {
+  const sql = neon(process.env.DATABASE_URL!); 
   try {
     const body = await request.json();
 
